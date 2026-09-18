@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.font-romantic {
+  font-family: 'Caveat', cursive;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+}
+
+.glass-panel-romantic {
+  background: rgba(255, 245, 247, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 215, 225, 0.7);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(254, 205, 211, 0.5);
+  box-shadow: 0 10px 30px -10px rgba(244, 63, 94, 0.12), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 228, 230, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(244, 63, 94, 0.35);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(244, 63, 94, 0.6);
+}
+
+/* Flying projectile trajectory keyframes */
+@keyframes flyKissLeftToRight {
+  0% {
+    transform: translate(0, 0) scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+    transform: translate(80px, -60px) scale(1.4) rotate(-15deg);
+  }
+  50% {
+    transform: translate(250px, -110px) scale(1.8) rotate(15deg);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(450px, -40px) scale(1.4) rotate(-10deg);
+  }
+  100% {
+    transform: translate(520px, 10px) scale(2.2) rotate(20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes flyKissRightToLeft {
+  0% {
+    transform: translate(0, 0) scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-80px, -60px) scale(1.4) rotate(15deg);
+  }
+  50% {
+    transform: translate(-250px, -110px) scale(1.8) rotate(-15deg);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-450px, -40px) scale(1.4) rotate(10deg);
+  }
+  100% {
+    transform: translate(-520px, 10px) scale(2.2) rotate(-20deg);
+    opacity: 0;
+  }
+}
+
+.animate-fly-kiss-rtl {
+  animation: flyKissRightToLeft 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.animate-fly-kiss-ltr {
+  animation: flyKissLeftToRight 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
