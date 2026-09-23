@@ -4,6 +4,7 @@ import { DreamItem } from '../../types';
 import { loadDreams, saveDreams } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
+import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
 import { Moon, Sparkles, Plus, Heart, Cloud, Compass } from 'lucide-react';
 
@@ -19,15 +20,27 @@ export const DreamJournal: React.FC = () => {
 
   useEffect(() => {
     saveDreams(dreams);
+    saveCloudData({ dreams });
   }, [dreams]);
 
   useEffect(() => {
-    const unsub = realtimeHub.subscribe((payload) => {
-      if (payload.type === 'DREAM_UPDATE' && Array.isArray(payload.data?.dreams)) {
-        setDreams(payload.data.dreams);
+    const unsubCloud = onCloudDataLoaded((cloudData) => {
+      if (Array.isArray(cloudData.dreams) && cloudData.dreams.length > 0) {
+        setDreams(cloudData.dreams);
       }
     });
-    return unsub;
+
+    const unsubRealtime = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'DREAM_UPDATE' && Array.isArray(payload.data?.dreams)) {
+        setDreams(payload.data.dreams);
+        saveDreams(payload.data.dreams);
+      }
+    });
+
+    return () => {
+      unsubCloud();
+      unsubRealtime();
+    };
   }, []);
 
   const handleAddDream = (e: React.FormEvent) => {

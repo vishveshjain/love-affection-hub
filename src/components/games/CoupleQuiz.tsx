@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCouple } from '../../context/CoupleContext';
 import { soundFx } from '../../utils/audio';
+import { realtimeHub, getClientId } from '../../utils/realtime';
 import confetti from 'canvas-confetti';
 import { HelpCircle, CheckCircle2, RotateCcw, Heart, Award } from 'lucide-react';
 
@@ -33,19 +34,45 @@ const QUIZ_QUESTIONS = [
 ];
 
 export const CoupleQuiz: React.FC = () => {
-  const { profile } = useCouple();
+  const { profile, currentUserName } = useCouple();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<{ [qId: number]: string }>({});
   const [isFinished, setIsFinished] = useState(false);
+
+  useEffect(() => {
+    const unsub = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'QUIZ_UPDATE' && payload.data) {
+        if (typeof payload.data.currentIdx === 'number') {
+          setCurrentIdx(payload.data.currentIdx);
+        }
+        if (payload.data.answers) {
+          setAnswers(payload.data.answers);
+        }
+        if (typeof payload.data.isFinished === 'boolean') {
+          setIsFinished(payload.data.isFinished);
+          if (payload.data.isFinished) {
+            soundFx.playCelebration();
+            confetti({
+              particleCount: 65,
+              spread: 75,
+              origin: { y: 0.6 },
+            });
+          }
+        }
+      }
+    });
+    return unsub;
+  }, []);
 
   const handleSelect = (choice: string) => {
     soundFx.playPop(550, 0.05);
     const newAnswers = { ...answers, [QUIZ_QUESTIONS[currentIdx].id]: choice };
     setAnswers(newAnswers);
 
-    if (currentIdx < QUIZ_QUESTIONS.length - 1) {
-      setCurrentIdx(currentIdx + 1);
-    } else {
+    const nextIdx = currentIdx < QUIZ_QUESTIONS.length - 1 ? currentIdx + 1 : currentIdx;
+    const nextFinished = currentIdx >= QUIZ_QUESTIONS.length - 1;
+
+    if (nextFinished) {
       setIsFinished(true);
       soundFx.playCelebration();
       confetti({
@@ -53,7 +80,23 @@ export const CoupleQuiz: React.FC = () => {
         spread: 75,
         origin: { y: 0.6 },
       });
+    } else {
+      setCurrentIdx(nextIdx);
     }
+
+    realtimeHub.publish({
+      type: 'QUIZ_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: {
+        currentIdx: nextIdx,
+        answers: newAnswers,
+        isFinished: nextFinished,
+        answeredBy: currentUserName,
+      },
+      timestamp: Date.now(),
+    });
   };
 
   const handleRestart = () => {
@@ -61,6 +104,20 @@ export const CoupleQuiz: React.FC = () => {
     setAnswers({});
     setIsFinished(false);
     soundFx.playPop(500, 0.05);
+
+    realtimeHub.publish({
+      type: 'QUIZ_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: {
+        currentIdx: 0,
+        answers: {},
+        isFinished: false,
+        answeredBy: currentUserName,
+      },
+      timestamp: Date.now(),
+    });
   };
 
   const currentQ = QUIZ_QUESTIONS[currentIdx];

@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCouple } from '../../context/CoupleContext';
 import { calculateFlames } from '../../utils/flames';
 import { FlamesResult } from '../../types';
 import { soundFx } from '../../utils/audio';
+import { realtimeHub, getClientId } from '../../utils/realtime';
 import confetti from 'canvas-confetti';
 import { Flame, Sparkles, RotateCcw, Heart, Zap, Award } from 'lucide-react';
 
 export const FlamesGame: React.FC = () => {
-  const { profile } = useCouple();
+  const { profile, currentUserName } = useCouple();
 
   const [name1, setName1] = useState(profile.boyfriendName);
   const [name2, setName2] = useState(profile.girlfriendName);
@@ -15,13 +16,25 @@ export const FlamesGame: React.FC = () => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [activeStep, setActiveStep] = useState<number>(0);
 
-  const handleRunFlames = () => {
-    if (!name1.trim() || !name2.trim()) return;
+  const runFlamesLogic = (n1: string, n2: string, fromRemote: boolean = false) => {
+    setName1(n1);
+    setName2(n2);
     soundFx.playPop(520, 0.08);
 
-    const res = calculateFlames(name1, name2);
+    const res = calculateFlames(n1, n2);
     setIsAnimating(true);
     setActiveStep(1);
+
+    if (!fromRemote) {
+      realtimeHub.publish({
+        type: 'FLAMES_RUN',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: { name1: n1, name2: n2 },
+        timestamp: Date.now(),
+      });
+    }
 
     // Step 1: Cross-out animation
     setTimeout(() => {
@@ -48,6 +61,20 @@ export const FlamesGame: React.FC = () => {
       });
     }, 3200);
   };
+
+  const handleRunFlames = () => {
+    if (!name1.trim() || !name2.trim()) return;
+    runFlamesLogic(name1.trim(), name2.trim(), false);
+  };
+
+  useEffect(() => {
+    const unsub = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'FLAMES_RUN' && payload.data?.name1 && payload.data?.name2) {
+        runFlamesLogic(payload.data.name1, payload.data.name2, true);
+      }
+    });
+    return unsub;
+  }, []);
 
   const handleReset = () => {
     setResult(null);

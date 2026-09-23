@@ -9,6 +9,7 @@ import {
 } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
+import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
 import { Heart, Plus, CheckCircle2, Circle, Sparkles, MapPin, StickyNote } from 'lucide-react';
 
@@ -42,21 +43,38 @@ export const LoveNotesJourney: React.FC = () => {
 
   useEffect(() => {
     saveLoveNotes(notes);
+    saveCloudData({ notes });
   }, [notes]);
 
   useEffect(() => {
     saveMilestones(milestones);
+    saveCloudData({ milestones });
   }, [milestones]);
 
   useEffect(() => {
-    const unsub = realtimeHub.subscribe((payload) => {
-      if (payload.type === 'NOTE_UPDATE' && Array.isArray(payload.data?.notes)) {
-        setNotes(payload.data.notes);
-      } else if (payload.type === 'JOURNEY_UPDATE' && Array.isArray(payload.data?.milestones)) {
-        setMilestones(payload.data.milestones);
+    const unsubCloud = onCloudDataLoaded((cloudData) => {
+      if (Array.isArray(cloudData.notes) && cloudData.notes.length > 0) {
+        setNotes(cloudData.notes);
+      }
+      if (Array.isArray(cloudData.milestones) && cloudData.milestones.length > 0) {
+        setMilestones(cloudData.milestones);
       }
     });
-    return unsub;
+
+    const unsubRealtime = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'NOTE_UPDATE' && Array.isArray(payload.data?.notes)) {
+        setNotes(payload.data.notes);
+        saveLoveNotes(payload.data.notes);
+      } else if (payload.type === 'JOURNEY_UPDATE' && Array.isArray(payload.data?.milestones)) {
+        setMilestones(payload.data.milestones);
+        saveMilestones(payload.data.milestones);
+      }
+    });
+
+    return () => {
+      unsubCloud();
+      unsubRealtime();
+    };
   }, []);
 
   const handleAddNote = (e: React.FormEvent) => {

@@ -4,6 +4,7 @@ import { ChatMessage } from '../../types';
 import { loadChatMessages, saveChatMessages } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getRoomKey, setRoomKey, getClientId, RealtimePayload } from '../../utils/realtime';
+import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
 import {
   Send,
@@ -90,9 +91,25 @@ export const LiveCoupleChat: React.FC = () => {
     };
   }, [roomKey]);
 
-  // Persist messages in local storage and auto-scroll
+  // Merge messages when cloud data is loaded
+  useEffect(() => {
+    const unsubCloud = onCloudDataLoaded((cloudData) => {
+      if (Array.isArray(cloudData.chat) && cloudData.chat.length > 0) {
+        setMessages((prev) => {
+          const map = new Map<string, ChatMessage>();
+          prev.forEach((m) => map.set(m.id, m));
+          cloudData.chat.forEach((m) => map.set(m.id, m));
+          return Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+        });
+      }
+    });
+    return unsubCloud;
+  }, []);
+
+  // Persist messages in local storage and cloud, and auto-scroll
   useEffect(() => {
     saveChatMessages(messages);
+    saveCloudData({ chat: messages });
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -151,10 +168,22 @@ export const LiveCoupleChat: React.FC = () => {
   };
 
   const handleAddReaction = (msgId: string, reactionEmoji: string) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msgId ? { ...m, reaction: reactionEmoji } : m))
+    const updated = messages.map((m) =>
+      m.id === msgId ? { ...m, reaction: reactionEmoji } : m
     );
+    setMessages(updated);
     soundFx.playPop(700, 0.04);
+
+    const changedMsg = updated.find((m) => m.id === msgId);
+    if (changedMsg) {
+      realtimeHub.publish({
+        type: 'CHAT_MESSAGE',
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: changedMsg,
+        timestamp: Date.now(),
+      });
+    }
   };
 
   const handleSaveRoomKey = (e: React.FormEvent) => {

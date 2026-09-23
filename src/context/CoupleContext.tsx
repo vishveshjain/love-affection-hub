@@ -20,6 +20,7 @@ import { soundFx } from '../utils/audio';
 
 import { getRandomWhisper } from '../utils/whispers';
 import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
+import { saveCloudData, startAutoCloudSync, onCloudDataLoaded } from '../utils/cloudStore';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -70,10 +71,12 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   useEffect(() => {
     saveStats(stats);
+    saveCloudData({ stats });
   }, [stats]);
 
   useEffect(() => {
     saveCoupons(coupons);
+    saveCloudData({ coupons });
   }, [coupons]);
 
   const currentUserName =
@@ -266,6 +269,18 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     realtimeHub.connect(getRoomKey());
     realtimeHub.setUserInfo(profile.currentUserRole, currentUserName);
 
+    // Initialize cloud persistence & recurring background sync
+    const unsubCloudSync = startAutoCloudSync(25000);
+
+    const unsubCloudData = onCloudDataLoaded((cloudData) => {
+      if (Array.isArray(cloudData.coupons) && cloudData.coupons.length > 0) {
+        setCoupons(cloudData.coupons);
+      }
+      if (cloudData.stats) {
+        setStats(cloudData.stats);
+      }
+    });
+
     const unsubPresence = realtimeHub.onPartnerPresenceChange((online) => {
       setPartnerOnline(online);
     });
@@ -291,6 +306,8 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
 
     return () => {
+      unsubCloudSync();
+      unsubCloudData();
       unsubPresence();
       unsubEvents();
     };

@@ -3,6 +3,8 @@ import { useCouple } from '../../context/CoupleContext';
 import { MemoryItem } from '../../types';
 import { fileToDataUrl } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
+import { realtimeHub, getClientId } from '../../utils/realtime';
+import { saveCloudData, onCloudDataLoaded, loadMemoriesFromLocal, saveMemoriesToLocal } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
 import { Camera, Plus, Trash2, Heart, Calendar } from 'lucide-react';
 
@@ -31,15 +33,10 @@ const DEFAULT_MEMORIES: MemoryItem[] = [
 ];
 
 export const MemoryWall: React.FC = () => {
-  const { partnerName } = useCouple();
+  const { profile, currentUserName, partnerName } = useCouple();
   const [memories, setMemories] = useState<MemoryItem[]>(() => {
-    try {
-      const raw = localStorage.getItem('love_app_memories_v1');
-      if (raw) return JSON.parse(raw);
-    } catch {
-      // Ignore
-    }
-    return DEFAULT_MEMORIES;
+    const local = loadMemoriesFromLocal();
+    return local && local.length > 0 ? local : DEFAULT_MEMORIES;
   });
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -52,12 +49,29 @@ export const MemoryWall: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('love_app_memories_v1', JSON.stringify(memories));
-    } catch {
-      // Ignore
-    }
+    saveMemoriesToLocal(memories);
+    saveCloudData({ memories });
   }, [memories]);
+
+  useEffect(() => {
+    const unsubCloud = onCloudDataLoaded((cloudData) => {
+      if (Array.isArray(cloudData.memories) && cloudData.memories.length > 0) {
+        setMemories(cloudData.memories);
+      }
+    });
+
+    const unsubRealtime = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'MEMORY_UPDATE' && Array.isArray(payload.data?.memories)) {
+        setMemories(payload.data.memories);
+        saveMemoriesToLocal(payload.data.memories);
+      }
+    });
+
+    return () => {
+      unsubCloud();
+      unsubRealtime();
+    };
+  }, []);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -84,12 +98,23 @@ export const MemoryWall: React.FC = () => {
       photoUrl: newPhoto,
     };
 
-    setMemories([newMem, ...memories]);
+    const updated = [newMem, ...memories];
+    setMemories(updated);
     setNewTitle('');
     setNewDate('');
     setNewDesc('');
     setNewPhoto(undefined);
     setShowAddModal(false);
+
+    realtimeHub.publish({
+      type: 'MEMORY_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { memories: updated },
+      timestamp: Date.now(),
+    });
+
     soundFx.playCelebration();
     confetti({
       particleCount: 50,
@@ -99,8 +124,18 @@ export const MemoryWall: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    setMemories(memories.filter((m) => m.id !== id));
+    const updated = memories.filter((m) => m.id !== id);
+    setMemories(updated);
     soundFx.playPop(420, 0.05);
+
+    realtimeHub.publish({
+      type: 'MEMORY_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { memories: updated },
+      timestamp: Date.now(),
+    });
   };
 
   return (

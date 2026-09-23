@@ -71,7 +71,7 @@ export const DEFAULT_COUPONS: ScratchCoupon[] = [
 ];
 
 export const INITIAL_PROFILE: CoupleProfile = {
-  currentUserRole: 'girlfriend',
+  currentUserRole: 'boyfriend',
   boyfriendName: 'Vishvesh',
   boyfriendPhoto: DEFAULT_BOYFRIEND_AVATAR,
   boyfriendMood: 'Totally smitten 🥰',

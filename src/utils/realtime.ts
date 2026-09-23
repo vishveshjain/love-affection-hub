@@ -10,7 +10,11 @@ export type RealtimeEventType =
   | 'COUPON_UPDATE'
   | 'DREAM_UPDATE'
   | 'NOTE_UPDATE'
-  | 'JOURNEY_UPDATE';
+  | 'JOURNEY_UPDATE'
+  | 'MEMORY_UPDATE'
+  | 'WHEEL_SPIN'
+  | 'QUIZ_UPDATE'
+  | 'FLAMES_RUN';
 
 export interface RealtimePayload {
   id?: string;
@@ -31,8 +35,8 @@ const CLIENT_STORAGE_KEY = 'love_app_client_id_v2';
 
 // Primary and fallback high-availability servers that support CORS and worldwide access
 const SERVERS = [
-  'https://ntfy.adminforge.de',
   'https://ntfy.tedomum.fr',
+  'https://ntfy.adminforge.de',
 ];
 
 let cachedClientId = '';
@@ -327,23 +331,17 @@ export class RealtimeService {
     const topic = getTopicName(this.currentRoomKey || getRoomKey());
     const bodyStr = JSON.stringify(fullPayload);
 
-    // Try primary server, fallback to secondary if needed
-    for (let i = 0; i < SERVERS.length; i++) {
-      const server = SERVERS[(this.currentServerIndex + i) % SERVERS.length];
-      try {
-        const res = await fetch(`${server}/${topic}`, {
+    // Broadcast to ALL servers simultaneously so that partner receives it on whichever server they are connected to!
+    const results = await Promise.allSettled(
+      SERVERS.map((server) =>
+        fetch(`${server}/${topic}`, {
           method: 'POST',
           body: bodyStr,
-        });
-        if (res.ok) {
-          return true;
-        }
-      } catch {
-        // Try next server
-      }
-    }
+        })
+      )
+    );
 
-    return false;
+    return results.some((r) => r.status === 'fulfilled' && (r.value as Response).ok);
   }
 
   public subscribe(callback: (payload: RealtimePayload) => void) {

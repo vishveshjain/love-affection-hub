@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCouple } from '../../context/CoupleContext';
 import { soundFx } from '../../utils/audio';
 import confetti from 'canvas-confetti';
@@ -15,21 +15,40 @@ const WHEEL_SLICES = [
   { text: 'Wildcard Choice', icon: '👑', color: '#8b5cf6' },
 ];
 
+import { realtimeHub, getClientId } from '../../utils/realtime';
+
 export const AffectionWheel: React.FC = () => {
-  const { partnerName } = useCouple();
+  const { profile, currentUserName, partnerName } = useCouple();
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [selectedSlice, setSelectedSlice] = useState<(typeof WHEEL_SLICES)[0] | null>(null);
+  const [spinnerLabel, setSpinnerLabel] = useState<string>('');
 
-  const spin = () => {
+  const spin = (incomingIndex?: number, remoteSpinner?: string) => {
     if (isSpinning) return;
     setIsSpinning(true);
     setSelectedSlice(null);
+    if (remoteSpinner) {
+      setSpinnerLabel(`${remoteSpinner} is spinning the wheel! 🎡`);
+    } else {
+      setSpinnerLabel('');
+    }
     soundFx.playPop(600, 0.08);
 
     const sliceCount = WHEEL_SLICES.length;
     const sliceAngle = 360 / sliceCount;
-    const randomIndex = Math.floor(Math.random() * sliceCount);
+    const randomIndex = typeof incomingIndex === 'number' ? incomingIndex : Math.floor(Math.random() * sliceCount);
+
+    if (typeof incomingIndex !== 'number') {
+      realtimeHub.publish({
+        type: 'WHEEL_SPIN',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: { randomIndex, spinnerName: currentUserName },
+        timestamp: Date.now(),
+      });
+    }
 
     // Extra spins (4 to 6 full rotations) + target slice angle
     const extraSpins = 360 * (5 + Math.floor(Math.random() * 2));
@@ -60,6 +79,15 @@ export const AffectionWheel: React.FC = () => {
     }, 3800);
   };
 
+  useEffect(() => {
+    const unsub = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'WHEEL_SPIN' && typeof payload.data?.randomIndex === 'number') {
+        spin(payload.data.randomIndex, payload.data.spinnerName || partnerName);
+      }
+    });
+    return unsub;
+  }, [rotation, isSpinning, partnerName]);
+
   const sliceAngle = 360 / WHEEL_SLICES.length;
 
   return (
@@ -70,6 +98,11 @@ export const AffectionWheel: React.FC = () => {
       <h3 className="text-2xl font-extrabold text-slate-800">
         The Affection Spin Wheel 🎡
       </h3>
+      {spinnerLabel && (
+        <div className="mt-2 px-4 py-1.5 rounded-full bg-purple-100 text-purple-800 text-xs font-bold animate-pulse">
+          {spinnerLabel}
+        </div>
+      )}
       <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-md">
         Spin the wheel of romantic dares and sweet duties for you and {partnerName}!
       </p>
@@ -132,7 +165,7 @@ export const AffectionWheel: React.FC = () => {
         <button
           type="button"
           disabled={isSpinning}
-          onClick={spin}
+          onClick={() => spin()}
           className="absolute z-20 w-16 h-16 rounded-full bg-white shadow-xl border-4 border-rose-500 text-rose-600 font-extrabold text-xs flex flex-col items-center justify-center hover:scale-105 active:scale-95 transition disabled:opacity-80"
         >
           <span>SPIN</span>
