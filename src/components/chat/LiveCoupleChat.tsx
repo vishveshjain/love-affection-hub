@@ -122,7 +122,6 @@ export const LiveCoupleChat: React.FC = () => {
       senderClientId: getClientId(),
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
-      senderPhoto: currentUserPhoto,
       text,
       timestamp: Date.now(),
     };
@@ -297,6 +296,10 @@ export const LiveCoupleChat: React.FC = () => {
             const isMe = msg.senderClientId
               ? msg.senderClientId === getClientId()
               : msg.senderName === currentUserName || msg.senderRole === profile.currentUserRole;
+            const avatarSrc =
+              msg.senderRole === 'boyfriend'
+                ? profile.boyfriendPhoto
+                : profile.girlfriendPhoto;
             return (
               <div
                 key={msg.id}
@@ -304,7 +307,7 @@ export const LiveCoupleChat: React.FC = () => {
               >
                 {!isMe && (
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-rose-200 shrink-0 shadow-xs mb-1">
-                    <img src={msg.senderPhoto} alt={msg.senderName} className="w-full h-full object-cover" />
+                    <img src={avatarSrc} alt={msg.senderName} className="w-full h-full object-cover" />
                   </div>
                 )}
 
@@ -345,7 +348,7 @@ export const LiveCoupleChat: React.FC = () => {
 
                 {isMe && (
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-rose-400 shrink-0 shadow-xs mb-1">
-                    <img src={msg.senderPhoto} alt={msg.senderName} className="w-full h-full object-cover" />
+                    <img src={avatarSrc} alt={msg.senderName} className="w-full h-full object-cover" />
                   </div>
                 )}
               </div>

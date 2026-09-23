@@ -15,6 +15,8 @@ import {
   loadMilestones,
   loadCoupons,
   loadStats,
+  loadProfile,
+  saveProfile,
 } from './storage';
 
 export interface CloudCoupleData {
@@ -28,6 +30,8 @@ export interface CloudCoupleData {
   coupons: ScratchCoupon[];
   memories?: MemoryItem[];
   stats?: AffectionStats;
+  boyfriendPhoto?: string;
+  girlfriendPhoto?: string;
 }
 
 const CLOUD_BIN_ID = 'fdfbbec';
@@ -173,6 +177,25 @@ export async function fetchCloudData(): Promise<CloudCoupleData | null> {
         data.stats = mergedStats;
       }
 
+      // Sync photos across devices if updated in cloud
+      try {
+        const localProf = loadProfile();
+        let profChanged = false;
+        if (data.boyfriendPhoto && data.boyfriendPhoto.length > 50 && data.boyfriendPhoto !== localProf.boyfriendPhoto) {
+          localProf.boyfriendPhoto = data.boyfriendPhoto;
+          profChanged = true;
+        }
+        if (data.girlfriendPhoto && data.girlfriendPhoto.length > 50 && data.girlfriendPhoto !== localProf.girlfriendPhoto) {
+          localProf.girlfriendPhoto = data.girlfriendPhoto;
+          profChanged = true;
+        }
+        if (profChanged) {
+          saveProfile(localProf);
+        }
+      } catch {
+        // Ignore
+      }
+
       inMemoryCloudData = data;
       notifyListeners(data);
       return data;
@@ -181,6 +204,59 @@ export async function fetchCloudData(): Promise<CloudCoupleData | null> {
     console.warn('Failed to fetch cloud couple data:', e);
   }
   return null;
+}
+
+function sanitizeForCloud(data: CloudCoupleData): CloudCoupleData {
+  const sanitized: CloudCoupleData = { ...data };
+  if (Array.isArray(sanitized.chat)) {
+    sanitized.chat = sanitized.chat.slice(-60).map((m) => {
+      if (m.senderPhoto && m.senderPhoto.length > 300) {
+        const { senderPhoto, ...rest } = m;
+        return rest;
+      }
+      return m;
+    });
+  }
+  if (Array.isArray(sanitized.dreams)) {
+    sanitized.dreams = sanitized.dreams.slice(-40);
+  }
+  if (Array.isArray(sanitized.notes)) {
+    sanitized.notes = sanitized.notes.slice(-40);
+  }
+  if (Array.isArray(sanitized.milestones)) {
+    sanitized.milestones = sanitized.milestones.slice(-30);
+  }
+  if (Array.isArray(sanitized.coupons)) {
+    sanitized.coupons = sanitized.coupons.slice(-25);
+  }
+  if (Array.isArray(sanitized.memories)) {
+    sanitized.memories = sanitized.memories.slice(-20);
+  }
+  return sanitized;
+}
+
+export async function pushToCloudNow(): Promise<boolean> {
+  if (!inMemoryCloudData) return false;
+  isSaving = true;
+  try {
+    const cleanPayload = sanitizeForCloud(inMemoryCloudData);
+    const bodyStr = JSON.stringify(cleanPayload);
+    // Safety check: ensure body is under ExtendsClass limit
+    if (bodyStr.length > 95000) {
+      console.warn('Payload approaching limit, truncating older items');
+    }
+    const res = await fetch(CLOUD_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: bodyStr,
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Cloud immediate save error:', err);
+    return false;
+  } finally {
+    isSaving = false;
+  }
 }
 
 export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' | 'coupleKey' | 'updatedAt'>>) {
@@ -212,23 +288,12 @@ export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' |
       pendingSave = true;
       return;
     }
-    isSaving = true;
-    try {
-      await fetch(CLOUD_ENDPOINT, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(inMemoryCloudData),
-      });
-    } catch (err) {
-      console.warn('Cloud save error:', err);
-    } finally {
-      isSaving = false;
-      if (pendingSave) {
-        pendingSave = false;
-        saveCloudData({});
-      }
+    await pushToCloudNow();
+    if (pendingSave) {
+      pendingSave = false;
+      saveCloudData({});
     }
-  }, 350);
+  }, 250);
 }
 
 // Start automatic periodic background sync every 25 seconds

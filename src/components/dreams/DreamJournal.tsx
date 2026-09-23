@@ -24,6 +24,12 @@ export const DreamJournal: React.FC = () => {
   }, [dreams]);
 
   useEffect(() => {
+    // Refresh from storage on mount
+    const local = loadDreams();
+    if (local && local.length > 0) {
+      setDreams(local);
+    }
+
     const unsubCloud = onCloudDataLoaded((cloudData) => {
       if (Array.isArray(cloudData.dreams) && cloudData.dreams.length > 0) {
         setDreams(cloudData.dreams);
@@ -37,9 +43,17 @@ export const DreamJournal: React.FC = () => {
       }
     });
 
+    const handleSync = (e: any) => {
+      if (Array.isArray(e.detail)) {
+        setDreams(e.detail);
+      }
+    };
+    window.addEventListener('love_app_dreams_sync', handleSync);
+
     return () => {
       unsubCloud();
       unsubRealtime();
+      window.removeEventListener('love_app_dreams_sync', handleSync);
     };
   }, []);
 

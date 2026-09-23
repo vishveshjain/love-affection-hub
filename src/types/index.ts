@@ -81,7 +81,7 @@ export interface ChatMessage {
   senderClientId?: string;
   senderRole: UserRole;
   senderName: string;
-  senderPhoto: string;
+  senderPhoto?: string;
   text: string;
   timestamp: number;
   reaction?: string;

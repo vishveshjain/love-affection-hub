@@ -52,6 +52,12 @@ export const LoveNotesJourney: React.FC = () => {
   }, [milestones]);
 
   useEffect(() => {
+    // Refresh on mount
+    const localNotes = loadLoveNotes();
+    if (localNotes && localNotes.length > 0) setNotes(localNotes);
+    const localMilestones = loadMilestones();
+    if (localMilestones && localMilestones.length > 0) setMilestones(localMilestones);
+
     const unsubCloud = onCloudDataLoaded((cloudData) => {
       if (Array.isArray(cloudData.notes) && cloudData.notes.length > 0) {
         setNotes(cloudData.notes);
@@ -71,9 +77,21 @@ export const LoveNotesJourney: React.FC = () => {
       }
     });
 
+    const handleNotesSync = (e: any) => {
+      if (Array.isArray(e.detail)) setNotes(e.detail);
+    };
+    const handleMilesSync = (e: any) => {
+      if (Array.isArray(e.detail)) setMilestones(e.detail);
+    };
+
+    window.addEventListener('love_app_notes_sync', handleNotesSync);
+    window.addEventListener('love_app_milestones_sync', handleMilesSync);
+
     return () => {
       unsubCloud();
       unsubRealtime();
+      window.removeEventListener('love_app_notes_sync', handleNotesSync);
+      window.removeEventListener('love_app_milestones_sync', handleMilesSync);
     };
   }, []);
 

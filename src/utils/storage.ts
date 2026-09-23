@@ -354,7 +354,17 @@ export function saveMilestones(milestones: JourneyMilestone[]): void {
 export function loadChatMessages(): ChatMessage[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CHAT);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed: ChatMessage[] = JSON.parse(raw);
+      // Sanitize: strip any giant base64 photos to keep memory & network feather-light
+      return parsed.map((m) => {
+        if (m.senderPhoto && m.senderPhoto.length > 500) {
+          const { senderPhoto, ...rest } = m;
+          return rest;
+        }
+        return m;
+      });
+    }
   } catch (e) {
     console.error('Failed to load chat', e);
   }
@@ -363,7 +373,6 @@ export function loadChatMessages(): ChatMessage[] {
       id: 'c1',
       senderRole: 'boyfriend',
       senderName: 'Vishvesh',
-      senderPhoto: DEFAULT_BOYFRIEND_AVATAR,
       text: 'Hey my Laura! Look what I found for us 💖',
       timestamp: Date.now() - 3600000,
     },
@@ -371,7 +380,6 @@ export function loadChatMessages(): ChatMessage[] {
       id: 'c2',
       senderRole: 'girlfriend',
       senderName: 'Laura',
-      senderPhoto: DEFAULT_GIRLFRIEND_AVATAR,
       text: 'Vishvesh! This is so cute! Hug me right now! 🥰🫂',
       timestamp: Date.now() - 1800000,
     },
@@ -380,18 +388,78 @@ export function loadChatMessages(): ChatMessage[] {
 
 export function saveChatMessages(messages: ChatMessage[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(messages));
+    // Sanitize before saving so localStorage quota is never exceeded
+    const clean = messages.map((m) => {
+      if (m.senderPhoto && m.senderPhoto.length > 500) {
+        const { senderPhoto, ...rest } = m;
+        return rest;
+      }
+      return m;
+    });
+    localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(clean));
   } catch (e) {
     console.error('Failed to save chat', e);
   }
 }
 
-// Convert uploaded file to base64 Data URL for persistent browser storage
-export function fileToDataUrl(file: File): Promise<string> {
+// Convert uploaded file to high-efficiency, lightweight compressed base64 Data URL
+// Resizes camera/phone photos (often 5MB-12MB) down to crisp ~3KB avatars so they never jam network or storage!
+export function fileToDataUrl(
+  file: File,
+  maxDimension: number = 180,
+  quality: number = 0.72
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
+    reader.onload = (e) => {
+      const rawResult = e.target?.result as string;
+      if (typeof window === 'undefined' || !window.document) {
+        resolve(rawResult);
+        return;
+      }
+
+      const img = new Image();
+      img.onerror = () => resolve(rawResult);
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxDimension) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            }
+          } else {
+            if (height > maxDimension) {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(rawResult);
+            return;
+          }
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Return lightweight, high-performance JPEG thumbnail
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed);
+        } catch {
+          resolve(rawResult);
+        }
+      };
+      img.src = rawResult;
+    };
     reader.readAsDataURL(file);
   });
 }

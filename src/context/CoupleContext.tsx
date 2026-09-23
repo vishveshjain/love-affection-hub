@@ -15,12 +15,15 @@ import {
   saveStats,
   loadCoupons,
   saveCoupons,
+  saveDreams,
+  saveLoveNotes,
+  saveMilestones,
 } from '../utils/storage';
 import { soundFx } from '../utils/audio';
 
 import { getRandomWhisper } from '../utils/whispers';
 import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
-import { saveCloudData, startAutoCloudSync, onCloudDataLoaded } from '../utils/cloudStore';
+import { saveCloudData, startAutoCloudSync, onCloudDataLoaded, saveMemoriesToLocal } from '../utils/cloudStore';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -92,7 +95,16 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     partnerRole === 'boyfriend' ? profile.boyfriendPhoto : profile.girlfriendPhoto;
 
   const updateProfile = (updates: Partial<CoupleProfile>) => {
-    setProfile((prev) => ({ ...prev, ...updates }));
+    setProfile((prev) => {
+      const next = { ...prev, ...updates };
+      if (updates.boyfriendPhoto || updates.girlfriendPhoto) {
+        saveCloudData({
+          boyfriendPhoto: next.boyfriendPhoto,
+          girlfriendPhoto: next.girlfriendPhoto,
+        });
+      }
+      return next;
+    });
   };
 
   const switchCurrentUserRole = (role: UserRole) => {
@@ -279,6 +291,12 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (cloudData.stats) {
         setStats(cloudData.stats);
       }
+      if (cloudData.boyfriendPhoto && cloudData.boyfriendPhoto.length > 50) {
+        setProfile((prev) => (prev.boyfriendPhoto === cloudData.boyfriendPhoto ? prev : { ...prev, boyfriendPhoto: cloudData.boyfriendPhoto! }));
+      }
+      if (cloudData.girlfriendPhoto && cloudData.girlfriendPhoto.length > 50) {
+        setProfile((prev) => (prev.girlfriendPhoto === cloudData.girlfriendPhoto ? prev : { ...prev, girlfriendPhoto: cloudData.girlfriendPhoto! }));
+      }
     });
 
     const unsubPresence = realtimeHub.onPartnerPresenceChange((online) => {
@@ -301,6 +319,38 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } else if (payload.type === 'COUPON_UPDATE') {
         if (Array.isArray(payload.data?.coupons)) {
           setCoupons(payload.data.coupons);
+        }
+      } else if (payload.type === 'DREAM_UPDATE') {
+        if (Array.isArray(payload.data?.dreams)) {
+          saveDreams(payload.data.dreams);
+          saveCloudData({ dreams: payload.data.dreams });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('love_app_dreams_sync', { detail: payload.data.dreams }));
+          }
+        }
+      } else if (payload.type === 'NOTE_UPDATE') {
+        if (Array.isArray(payload.data?.notes)) {
+          saveLoveNotes(payload.data.notes);
+          saveCloudData({ notes: payload.data.notes });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('love_app_notes_sync', { detail: payload.data.notes }));
+          }
+        }
+      } else if (payload.type === 'JOURNEY_UPDATE') {
+        if (Array.isArray(payload.data?.milestones)) {
+          saveMilestones(payload.data.milestones);
+          saveCloudData({ milestones: payload.data.milestones });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('love_app_milestones_sync', { detail: payload.data.milestones }));
+          }
+        }
+      } else if (payload.type === 'MEMORY_UPDATE') {
+        if (Array.isArray(payload.data?.memories)) {
+          saveMemoriesToLocal(payload.data.memories);
+          saveCloudData({ memories: payload.data.memories });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('love_app_memories_sync', { detail: payload.data.memories }));
+          }
         }
       }
     });

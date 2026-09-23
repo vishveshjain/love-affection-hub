@@ -217,8 +217,15 @@ export class RealtimeService {
               
               if (payload.id) this.seenIds.add(payload.id);
 
-              // ONLY dispatch historical CHAT_MESSAGE, NOT LIVE_AFFECTION
-              if (payload.type === 'CHAT_MESSAGE') {
+              // Dispatch historical state (Chat, Dreams, Notes, Milestones, Coupons, Memories)
+              if (
+                payload.type === 'CHAT_MESSAGE' ||
+                payload.type === 'DREAM_UPDATE' ||
+                payload.type === 'NOTE_UPDATE' ||
+                payload.type === 'JOURNEY_UPDATE' ||
+                payload.type === 'COUPON_UPDATE' ||
+                payload.type === 'MEMORY_UPDATE'
+              ) {
                 payload.isHistorical = true;
                 this.notifyListeners(payload);
               }
