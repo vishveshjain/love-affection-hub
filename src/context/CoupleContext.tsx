@@ -19,6 +19,7 @@ import {
 import { soundFx } from '../utils/audio';
 
 import { getRandomWhisper } from '../utils/whispers';
+import { realtimeHub, getRoomKey } from '../utils/realtime';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -33,7 +34,7 @@ interface CoupleContextType {
   partnerRole: UserRole;
   updateProfile: (updates: Partial<CoupleProfile>) => void;
   switchCurrentUserRole: (role: UserRole) => void;
-  triggerAction: (action: AffectionActionType, customMsg?: string) => void;
+  triggerAction: (action: AffectionActionType, customMsg?: string, skipPublish?: boolean) => void;
   dismissAction: () => void;
   setShowOnboarding: (show: boolean) => void;
   updateCoupons: (coupons: ScratchCoupon[]) => void;
@@ -92,9 +93,11 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     soundFx.playPop(520, 0.08);
   };
 
-  const triggerAction = (action: AffectionActionType, customMsg?: string) => {
-    const senderName = currentUserName;
-    const targetName = partnerName;
+  const triggerAction = (action: AffectionActionType, customMsg?: string, skipPublish = false) => {
+    const senderRole = skipPublish ? partnerRole : profile.currentUserRole;
+    const targetRole = skipPublish ? profile.currentUserRole : partnerRole;
+    const senderName = skipPublish ? partnerName : currentUserName;
+    const targetName = skipPublish ? currentUserName : partnerName;
 
     let defaultMsg = '';
     switch (action) {
@@ -114,7 +117,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       case 'hug':
         defaultMsg =
-          profile.currentUserRole === 'boyfriend'
+          senderRole === 'boyfriend'
             ? `🫂 ${profile.boyfriendName} wraps his arms around his angel ${profile.girlfriendName} in a warm, tight embrace!`
             : `🫂 ${profile.girlfriendName} wraps her arms around ${profile.boyfriendName} with all her love!`;
         if (profile.soundEnabled) soundFx.playHug();
@@ -128,7 +131,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         break;
 
       case 'carry':
-        if (profile.currentUserRole === 'boyfriend') {
+        if (senderRole === 'boyfriend') {
           defaultMsg = `👑 ${profile.boyfriendName} gently sweeps his angel ${profile.girlfriendName} into his arms like a true princess!`;
         } else {
           defaultMsg = `👑 ${profile.girlfriendName} leaps into ${profile.boyfriendName}'s strong arms and snuggles close!`;
@@ -145,7 +148,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       case 'handhold':
         defaultMsg =
-          profile.currentUserRole === 'boyfriend'
+          senderRole === 'boyfriend'
             ? `🤝 ${profile.boyfriendName} holds his angel ${profile.girlfriendName}'s hand, bound by destiny!`
             : `🤝 ${profile.girlfriendName} intertwines her fingers with ${profile.boyfriendName}'s hand!`;
         if (profile.soundEnabled) soundFx.playHug();
@@ -154,7 +157,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       case 'feed':
         defaultMsg =
-          profile.currentUserRole === 'boyfriend'
+          senderRole === 'boyfriend'
             ? `🍓 ${profile.boyfriendName} lovingly feeds sweet treats and strawberries to his angel ${profile.girlfriendName}!`
             : `🍓 ${profile.girlfriendName} feeds delicious sweet treats and chocolates to ${profile.boyfriendName}!`;
         if (profile.soundEnabled) soundFx.playPop(680, 0.12);
@@ -179,26 +182,51 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         break;
 
       case 'whisper':
-        defaultMsg = getRandomWhisper(senderName, targetName);
+        defaultMsg = customMsg || getRandomWhisper(senderName, targetName);
         if (profile.soundEnabled) soundFx.playRomanticSigh();
         break;
     }
 
+    const finalMsg = customMsg || defaultMsg;
+
     setActionState({
       active: true,
       action,
-      senderRole: profile.currentUserRole,
-      targetRole: partnerRole,
+      senderRole,
+      targetRole,
       senderName,
       targetName,
-      sweetMessage: customMsg || defaultMsg,
+      sweetMessage: finalMsg,
     });
 
-    // Auto-dismiss after 4 seconds
+    if (!skipPublish) {
+      realtimeHub.publish({
+        type: 'LIVE_AFFECTION',
+        senderRole: profile.currentUserRole,
+        senderName,
+        data: { action, customMsg: finalMsg },
+        timestamp: Date.now(),
+      });
+    }
+
+    // Auto-dismiss after 4.2 seconds
     setTimeout(() => {
       setActionState((prev) => ({ ...prev, active: false }));
     }, 4200);
   };
+
+  useEffect(() => {
+    realtimeHub.connect(getRoomKey());
+    const unsubscribe = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'LIVE_AFFECTION') {
+        const isFresh = Date.now() - (payload.timestamp || 0) < 15000;
+        if (payload.senderRole !== profile.currentUserRole && payload.data?.action && isFresh) {
+          triggerAction(payload.data.action, payload.data.customMsg, true);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [profile.currentUserRole]);
 
   const dismissAction = () => {
     setActionState((prev) => ({ ...prev, active: false }));

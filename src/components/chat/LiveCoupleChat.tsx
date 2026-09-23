@@ -3,8 +3,22 @@ import { useCouple } from '../../context/CoupleContext';
 import { ChatMessage } from '../../types';
 import { loadChatMessages, saveChatMessages } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
+import { realtimeHub, getRoomKey, setRoomKey, RealtimePayload } from '../../utils/realtime';
 import confetti from 'canvas-confetti';
-import { Send, Heart, Sparkles, MessageCircle, Smile, Zap, RefreshCw } from 'lucide-react';
+import {
+  Send,
+  Heart,
+  Sparkles,
+  MessageCircle,
+  Smile,
+  Zap,
+  Key,
+  Globe,
+  Wifi,
+  WifiOff,
+  Copy,
+  Check,
+} from 'lucide-react';
 
 const LOVE_EMOJIS = ['💖', '💋', '🥰', '🫂', '💍', '🌹', '💌', '✨', '🍓', '🧸', '🥺', '👑', '🍰', '🌸'];
 
@@ -13,66 +27,83 @@ export const LiveCoupleChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>(loadChatMessages);
   const [inputText, setInputText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [roomKey, setRoomKeyState] = useState(getRoomKey());
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [tempRoomKey, setTempRoomKey] = useState(getRoomKey());
+  const [copied, setCopied] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const channelRef = useRef<BroadcastChannel | null>(null);
-
-  // Cross-tab real-time sync with BroadcastChannel
+  // Initialize and subscribe to real-time internet connection
   useEffect(() => {
-    try {
-      const channel = new BroadcastChannel('love_couple_chat_channel');
-      channelRef.current = channel;
+    realtimeHub.connect(roomKey);
 
-      channel.onmessage = (event) => {
-        if (event.data?.type === 'NEW_MESSAGE') {
-          const incomingMsg: ChatMessage = event.data.message;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === incomingMsg.id)) return prev;
-            return [...prev, incomingMsg];
-          });
-          soundFx.playPop(620, 0.08);
-        } else if (event.data?.type === 'LOVE_BUZZ') {
-          soundFx.playCelebration();
-          confetti({
-            particleCount: 50,
-            spread: 70,
-            origin: { y: 0.6 },
-            colors: ['#f43f5e', '#ec4899', '#fbbf24'],
-          });
-        }
-      };
-    } catch {
-      // Fallback to storage event for older browsers
-      const handleStorage = (e: StorageEvent) => {
-        if (e.key === 'love_app_chat_messages_v2' && e.newValue) {
-          try {
-            setMessages(JSON.parse(e.newValue));
-          } catch {
-            // Ignore
+    const unsubscribeStatus = realtimeHub.onConnectionChange((connected) => {
+      setIsConnected(connected);
+    });
+
+    const unsubscribeMessages = realtimeHub.subscribe((payload: RealtimePayload) => {
+      if (payload.type === 'CHAT_MESSAGE') {
+        const incomingMsg: ChatMessage = payload.data;
+        if (!incomingMsg || !incomingMsg.id) return;
+
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+          return [...prev, incomingMsg];
+        });
+
+        // If the message is fresh and from partner, play alert sound and haptic vibration
+        const isFresh = Date.now() - (incomingMsg.timestamp || 0) < 15000;
+        if (payload.senderRole !== profile.currentUserRole && isFresh) {
+          soundFx.playPop(650, 0.08);
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate([60, 40, 60]);
+            } catch {
+              // Ignore
+            }
           }
         }
-      };
-      window.addEventListener('storage', handleStorage);
-      return () => window.removeEventListener('storage', handleStorage);
-    }
+      } else if (payload.type === 'LOVE_BUZZ') {
+        const isFresh = Date.now() - (payload.timestamp || 0) < 15000;
+        if (payload.senderRole !== profile.currentUserRole && isFresh) {
+          soundFx.playCelebration();
+          confetti({
+            particleCount: 65,
+            spread: 85,
+            origin: { y: 0.6 },
+            colors: ['#f43f5e', '#ec4899', '#fbbf24', '#c084fc'],
+          });
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate([150, 80, 150]);
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      }
+    });
 
     return () => {
-      channelRef.current?.close();
+      unsubscribeStatus();
+      unsubscribeMessages();
     };
-  }, []);
+  }, [roomKey, profile.currentUserRole]);
 
-  // Save messages and auto-scroll
+  // Persist messages in local storage and auto-scroll
   useEffect(() => {
     saveChatMessages(messages);
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
     if (!text) return;
 
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
       senderPhoto: currentUserPhoto,
@@ -80,22 +111,22 @@ export const LiveCoupleChat: React.FC = () => {
       timestamp: Date.now(),
     };
 
+    // Add locally immediately
     setMessages((prev) => [...prev, newMsg]);
     setInputText('');
     soundFx.playPop(520, 0.05);
 
-    // Broadcast to other tab
-    try {
-      channelRef.current?.postMessage({
-        type: 'NEW_MESSAGE',
-        message: newMsg,
-      });
-    } catch {
-      // Ignore
-    }
+    // Publish to the internet
+    await realtimeHub.publish({
+      type: 'CHAT_MESSAGE',
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: newMsg,
+      timestamp: Date.now(),
+    });
   };
 
-  const handleSendLoveBuzz = () => {
+  const handleSendLoveBuzz = async () => {
     soundFx.playCelebration();
     confetti({
       particleCount: 45,
@@ -103,13 +134,16 @@ export const LiveCoupleChat: React.FC = () => {
       origin: { y: 0.6 },
     });
 
-    handleSendMessage(`💖 *Sent a high-voltage Love Buzz to ${partnerName}!* ⚡✨`);
+    const buzzText = `💖⚡ *Sent a high-voltage Love Buzz to ${partnerName}!* ✨`;
+    await handleSendMessage(buzzText);
 
-    try {
-      channelRef.current?.postMessage({ type: 'LOVE_BUZZ' });
-    } catch {
-      // Ignore
-    }
+    await realtimeHub.publish({
+      type: 'LOVE_BUZZ',
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { sender: currentUserName },
+      timestamp: Date.now(),
+    });
   };
 
   const handleAddEmoji = (emoji: string) => {
@@ -124,16 +158,36 @@ export const LiveCoupleChat: React.FC = () => {
     soundFx.playPop(700, 0.04);
   };
 
+  const handleSaveRoomKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = tempRoomKey.trim() || 'vishvesh-laura-love-nest-2026';
+    setRoomKey(cleaned);
+    setRoomKeyState(cleaned);
+    setShowRoomModal(false);
+    realtimeHub.connect(cleaned);
+    soundFx.playPop(600, 0.08);
+  };
+
+  const copyRoomKey = () => {
+    navigator.clipboard?.writeText(roomKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className="p-4 md:p-6 rounded-3xl glass-card border border-rose-200 shadow-xl max-w-3xl mx-auto flex flex-col h-[580px]">
+    <div className="p-4 md:p-6 rounded-3xl glass-card border border-rose-200 shadow-xl max-w-3xl mx-auto flex flex-col h-[600px]">
       {/* Chat Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-rose-100 shrink-0">
+      <div className="flex items-center justify-between pb-3 border-b border-rose-100 shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-rose-400 shadow-sm">
               <img src={partnerPhoto} alt={partnerName} className="w-full h-full object-cover" />
             </div>
-            <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
+            <span
+              className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
@@ -144,75 +198,124 @@ export const LiveCoupleChat: React.FC = () => {
                 {partnerRole === 'boyfriend' ? '🤴 Boyfriend' : '👸 My Angel'}
               </span>
             </div>
-            <p className="text-xs text-emerald-600 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-              <span>Live cross-tab sync active 💕</span>
-            </p>
+
+            {/* Connection Status Badge */}
+            <div className="flex items-center gap-1 text-xs">
+              {isConnected ? (
+                <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                  <Wifi className="w-3 h-3 text-emerald-500" />
+                  <span>Live Online (Across the Internet ☁️)</span>
+                </span>
+              ) : (
+                <span className="text-amber-600 font-medium flex items-center gap-1">
+                  <WifiOff className="w-3 h-3 text-amber-500" />
+                  <span>Connecting across internet...</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Love Buzz Button */}
-        <button
-          type="button"
-          onClick={handleSendLoveBuzz}
-          title="Send a heart vibration buzz to partner!"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-rose-400/25 transition active:scale-95"
-        >
-          <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
-          <span>Send Love Buzz!</span>
-        </button>
+        {/* Room Key & Love Buzz Action Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Secret Room Key Pill */}
+          <button
+            type="button"
+            onClick={() => {
+              setTempRoomKey(roomKey);
+              setShowRoomModal(true);
+            }}
+            title="Private Couple Room Code"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-600 hover:text-rose-600 text-xs font-semibold shadow-xs transition"
+          >
+            <Key className="w-3.5 h-3.5 text-rose-500" />
+            <span className="hidden sm:inline">Room:</span>
+            <span className="font-mono text-[11px] font-bold text-rose-700 truncate max-w-[100px]">
+              {roomKey}
+            </span>
+          </button>
+
+          {/* Love Buzz Button */}
+          <button
+            type="button"
+            onClick={handleSendLoveBuzz}
+            title="Send an instant heart vibration buzz to your partner anywhere in the world!"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-rose-400/25 transition active:scale-95"
+          >
+            <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
+            <span>Love Buzz!</span>
+          </button>
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto py-4 px-2 space-y-3">
-        {messages.map((msg) => {
-          const isMe = msg.senderRole === profile.currentUserRole;
-          return (
-            <div
-              key={msg.id}
-              className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}
-            >
-              {!isMe && (
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-rose-200 shrink-0 shadow-xs mb-1">
-                  <img src={msg.senderPhoto} alt={msg.senderName} className="w-full h-full object-cover" />
-                </div>
-              )}
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+            <Globe className="w-10 h-10 text-rose-300 mb-2 animate-bounce" />
+            <p className="font-bold text-slate-700 text-sm">Your Private Internet Love Chat</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs">
+              Say hello! Any message you type here will reach {partnerName}'s phone anywhere in the world in real time.
+            </p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            const isMe = msg.senderRole === profile.currentUserRole;
+            return (
+              <div
+                key={msg.id}
+                className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}
+              >
+                {!isMe && (
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-rose-200 shrink-0 shadow-xs mb-1">
+                    <img src={msg.senderPhoto} alt={msg.senderName} className="w-full h-full object-cover" />
+                  </div>
+                )}
 
-              <div className="max-w-[75%] sm:max-w-[65%]">
-                <div
-                  className={`relative p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-xs ${
-                    isMe
-                      ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-br-none shadow-rose-400/15'
-                      : 'bg-white text-slate-800 border border-rose-100 rounded-bl-none shadow-sm'
-                  }`}
-                >
-                  <p className="break-words font-medium">{msg.text}</p>
-
+                <div className="max-w-[78%] sm:max-w-[65%]">
                   <div
-                    className={`flex items-center justify-between gap-3 text-[10px] mt-1 pt-1 ${
-                      isMe ? 'text-rose-100/90' : 'text-slate-400'
+                    className={`relative p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-xs ${
+                      isMe
+                        ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-br-none shadow-rose-400/15'
+                        : 'bg-white text-slate-800 border border-rose-100 rounded-bl-none shadow-sm'
                     }`}
                   >
-                    <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleAddReaction(msg.id, '❤️')}
-                      className="hover:scale-125 transition-transform"
+                    <p className="break-words font-medium">{msg.text}</p>
+
+                    <div
+                      className={`flex items-center justify-between gap-3 text-[10px] mt-1 pt-1 ${
+                        isMe ? 'text-rose-100/90' : 'text-slate-400'
+                      }`}
                     >
-                      {msg.reaction || '🤍'}
-                    </button>
+                      <span className="flex items-center gap-1">
+                        <span>
+                          {new Date(msg.timestamp).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        {isMe && <span title="Sent across the internet">☁️</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleAddReaction(msg.id, '❤️')}
+                        className="hover:scale-125 transition-transform"
+                      >
+                        {msg.reaction || '🤍'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {isMe && (
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-rose-400 shrink-0 shadow-xs mb-1">
-                  <img src={msg.senderPhoto} alt={msg.senderName} className="w-full h-full object-cover" />
-                </div>
-              )}
-            </div>
-          );
-        })}
+                {isMe && (
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-rose-400 shrink-0 shadow-xs mb-1">
+                    <img src={msg.senderPhoto} alt={msg.senderName} className="w-full h-full object-cover" />
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -263,6 +366,67 @@ export const LiveCoupleChat: React.FC = () => {
           <Send className="w-4 h-4" />
         </button>
       </form>
+
+      {/* Secret Room Key Configuration Modal */}
+      {showRoomModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="relative w-full max-w-md p-6 rounded-3xl bg-white shadow-2xl border border-rose-200">
+            <div className="flex items-center gap-2 text-rose-600 mb-2">
+              <Key className="w-5 h-5" />
+              <h4 className="text-lg font-bold text-slate-800">Private Couple Room Code</h4>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              This secret code connects your phone and {partnerName}'s phone in real-time across the internet! Both of you must share the same room code.
+            </p>
+
+            <form onSubmit={handleSaveRoomKey} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                  Secret Room Code
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={tempRoomKey}
+                    onChange={(e) => setTempRoomKey(e.target.value)}
+                    placeholder="e.g. vishvesh-laura-love-nest-2026"
+                    className="flex-1 px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyRoomKey}
+                    className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition text-xs font-semibold flex items-center gap-1"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copied ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Default is already pre-configured for Vishvesh &amp; Laura.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRoomModal(false)}
+                  className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white text-xs font-bold shadow-md shadow-rose-400/30"
+                >
+                  Save &amp; Connect 🌐
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
