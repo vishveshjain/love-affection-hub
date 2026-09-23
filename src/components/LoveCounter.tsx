@@ -13,7 +13,13 @@ export const LoveCounter: React.FC = () => {
 
   useEffect(() => {
     const calculateTime = () => {
-      const start = new Date(profile.relationshipStartDate).getTime();
+      let start: number;
+      try {
+        const [y, m, d] = profile.relationshipStartDate.split('-');
+        start = new Date(Number(y), Number(m) - 1, Number(d)).getTime();
+      } catch {
+        start = new Date(profile.relationshipStartDate).getTime();
+      }
       const now = new Date().getTime();
       const diff = Math.max(0, now - start);
 

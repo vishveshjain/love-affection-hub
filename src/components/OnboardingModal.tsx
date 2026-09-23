@@ -19,7 +19,7 @@ export const OnboardingModal: React.FC = () => {
   );
   const [boyfriendPhoto, setBoyfriendPhoto] = useState(profile.boyfriendPhoto || DEFAULT_BOYFRIEND_AVATAR);
   const [girlfriendPhoto, setGirlfriendPhoto] = useState(profile.girlfriendPhoto || DEFAULT_GIRLFRIEND_AVATAR);
-  const [relationshipStartDate, setRelationshipStartDate] = useState(profile.relationshipStartDate || '2024-08-25');
+  const [relationshipStartDate, setRelationshipStartDate] = useState(profile.relationshipStartDate || '2026-08-25');
 
   const bfFileInputRef = useRef<HTMLInputElement | null>(null);
   const gfFileInputRef = useRef<HTMLInputElement | null>(null);

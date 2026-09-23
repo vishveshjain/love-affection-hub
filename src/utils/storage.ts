@@ -78,7 +78,7 @@ export const INITIAL_PROFILE: CoupleProfile = {
   girlfriendName: 'Laura',
   girlfriendPhoto: DEFAULT_GIRLFRIEND_AVATAR,
   girlfriendMood: 'Needs kisses & attention 🥺💖',
-  relationshipStartDate: '2024-08-25',
+  relationshipStartDate: '2026-08-25',
   isConfigured: false,
   soundEnabled: true,
   ambientMusicEnabled: false,
@@ -212,7 +212,7 @@ export const DEFAULT_MILESTONES: JourneyMilestone[] = [
 ];
 
 const STORAGE_KEYS = {
-  PROFILE: 'love_app_couple_profile_v5',
+  PROFILE: 'love_app_couple_profile_v6',
   STATS: 'love_app_affection_stats_v2',
   COUPONS: 'love_app_scratch_coupons_v2',
   MEMORIES: 'love_app_memories_v2',
@@ -234,8 +234,12 @@ export function loadProfile(): CoupleProfile {
       if (!parsed.boyfriendName) {
         parsed.boyfriendName = 'Vishvesh';
       }
-      if (!parsed.relationshipStartDate || parsed.relationshipStartDate === '2024-02-14') {
-        parsed.relationshipStartDate = '2024-08-25';
+      if (
+        !parsed.relationshipStartDate ||
+        parsed.relationshipStartDate === '2024-02-14' ||
+        parsed.relationshipStartDate === '2024-08-25'
+      ) {
+        parsed.relationshipStartDate = '2026-08-25';
       }
       return { ...INITIAL_PROFILE, ...parsed };
     }
