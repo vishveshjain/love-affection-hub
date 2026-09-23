@@ -48,7 +48,22 @@ export const LoveCounter: React.FC = () => {
             </h3>
             <p className="text-xs md:text-sm text-pink-100 mt-0.5 flex items-center justify-center md:justify-start gap-1">
               <Calendar className="w-3.5 h-3.5" />
-              <span>Loving each other since {profile.relationshipStartDate}</span>
+              <span>
+                Loving each other since{' '}
+                {(() => {
+                  try {
+                    const [y, m, d] = profile.relationshipStartDate.split('-');
+                    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+                    return dateObj.toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    });
+                  } catch {
+                    return profile.relationshipStartDate;
+                  }
+                })()}
+              </span>
             </p>
           </div>
 
