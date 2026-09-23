@@ -17,6 +17,10 @@ const ScratchCardItem: React.FC<ScratchCardProps> = ({ coupon, onReveal, onRedee
   const isDrawing = useRef(false);
 
   useEffect(() => {
+    setIsScratched(coupon.scratched);
+  }, [coupon.scratched]);
+
+  useEffect(() => {
     if (isScratched) return;
     const canvas = canvasRef.current;
     if (!canvas) return;

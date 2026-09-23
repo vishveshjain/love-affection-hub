@@ -8,6 +8,7 @@ import {
   saveMilestones,
 } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
+import { realtimeHub, getClientId } from '../../utils/realtime';
 import confetti from 'canvas-confetti';
 import { Heart, Plus, CheckCircle2, Circle, Sparkles, MapPin, StickyNote } from 'lucide-react';
 
@@ -47,6 +48,17 @@ export const LoveNotesJourney: React.FC = () => {
     saveMilestones(milestones);
   }, [milestones]);
 
+  useEffect(() => {
+    const unsub = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'NOTE_UPDATE' && Array.isArray(payload.data?.notes)) {
+        setNotes(payload.data.notes);
+      } else if (payload.type === 'JOURNEY_UPDATE' && Array.isArray(payload.data?.milestones)) {
+        setMilestones(payload.data.milestones);
+      }
+    });
+    return unsub;
+  }, []);
+
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (!noteTitle.trim() || !noteBody.trim()) return;
@@ -61,10 +73,21 @@ export const LoveNotesJourney: React.FC = () => {
       date: 'Today',
     };
 
-    setNotes([newNote, ...notes]);
+    const updated = [newNote, ...notes];
+    setNotes(updated);
     setNoteTitle('');
     setNoteBody('');
     setShowAddNote(false);
+
+    realtimeHub.publish({
+      type: 'NOTE_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { notes: updated },
+      timestamp: Date.now(),
+    });
+
     soundFx.playCelebration();
     confetti({
       particleCount: 40,
@@ -85,38 +108,57 @@ export const LoveNotesJourney: React.FC = () => {
       emoji: milestoneEmoji,
     };
 
-    setMilestones([...milestones, newMilestone]);
+    const updated = [...milestones, newMilestone];
+    setMilestones(updated);
     setMilestoneTitle('');
     setMilestoneDesc('');
     setShowAddMilestone(false);
     soundFx.playPop(650, 0.08);
+
+    realtimeHub.publish({
+      type: 'JOURNEY_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { milestones: updated },
+      timestamp: Date.now(),
+    });
   };
 
   const toggleMilestone = (id: string) => {
-    setMilestones((prev) =>
-      prev.map((m) => {
-        if (m.id === id) {
-          const nextCompleted = !m.completed;
-          if (nextCompleted) {
-            soundFx.playCelebration();
-            confetti({
-              particleCount: 60,
-              spread: 80,
-              origin: { y: 0.6 },
-              colors: ['#f43f5e', '#ec4899', '#fbbf24', '#10b981'],
-            });
-          } else {
-            soundFx.playPop(480, 0.05);
-          }
-          return {
-            ...m,
-            completed: nextCompleted,
-            completedDate: nextCompleted ? 'Achieved!' : undefined,
-          };
+    const updated = milestones.map((m) => {
+      if (m.id === id) {
+        const nextCompleted = !m.completed;
+        if (nextCompleted) {
+          soundFx.playCelebration();
+          confetti({
+            particleCount: 60,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#f43f5e', '#ec4899', '#fbbf24', '#10b981'],
+          });
+        } else {
+          soundFx.playPop(480, 0.05);
         }
-        return m;
-      })
-    );
+        return {
+          ...m,
+          completed: nextCompleted,
+          completedDate: nextCompleted ? 'Achieved!' : undefined,
+        };
+      }
+      return m;
+    });
+
+    setMilestones(updated);
+
+    realtimeHub.publish({
+      type: 'JOURNEY_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { milestones: updated },
+      timestamp: Date.now(),
+    });
   };
 
   const completedCount = milestones.filter((m) => m.completed).length;

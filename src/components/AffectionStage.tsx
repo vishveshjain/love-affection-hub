@@ -13,7 +13,17 @@ const MOOD_OPTIONS = [
 ];
 
 export const AffectionStage: React.FC = () => {
-  const { profile, updateProfile, actionState, dismissAction, stats, setShowOnboarding } = useCouple();
+  const {
+    profile,
+    updateProfile,
+    actionState,
+    dismissAction,
+    stats,
+    setShowOnboarding,
+    partnerOnline,
+    partnerName,
+    broadcastMoodChange,
+  } = useCouple();
   const [editingBfMood, setEditingBfMood] = useState(false);
   const [editingGfMood, setEditingGfMood] = useState(false);
   const [lastKissTarget, setLastKissTarget] = useState<'boyfriend' | 'girlfriend' | null>(null);
@@ -37,6 +47,27 @@ export const AffectionStage: React.FC = () => {
 
   return (
     <section className="relative w-full py-6 px-4">
+      {/* Live Internet Presence Status Banner */}
+      <div className="max-w-md mx-auto mb-4 flex items-center justify-center">
+        <div
+          className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all shadow-xs ${
+            partnerOnline
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 ring-2 ring-emerald-400/20 animate-pulse'
+              : 'bg-white/80 text-slate-500 border border-rose-100'
+          }`}
+        >
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${
+              partnerOnline ? 'bg-emerald-500 shadow-sm shadow-emerald-400' : 'bg-slate-300'
+            }`}
+          />
+          {partnerOnline ? (
+            <span>🟢 {partnerName} is online with you right now! 💕</span>
+          ) : (
+            <span>Waiting for {partnerName} to connect...</span>
+          )}
+        </div>
+      </div>
       {/* Active Action Floating Banner */}
       {actionState.active && (
         <div className="max-w-xl mx-auto mb-6 p-4 rounded-3xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 text-white shadow-xl shadow-rose-500/25 flex items-center justify-between gap-3 animate-bounce">
@@ -212,7 +243,7 @@ export const AffectionStage: React.FC = () => {
                   <button
                     key={mood}
                     onClick={() => {
-                      updateProfile({ boyfriendMood: mood });
+                      broadcastMoodChange('boyfriend', mood);
                       setEditingBfMood(false);
                     }}
                     className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition truncate"
@@ -394,7 +425,7 @@ export const AffectionStage: React.FC = () => {
                   <button
                     key={mood}
                     onClick={() => {
-                      updateProfile({ girlfriendMood: mood });
+                      broadcastMoodChange('girlfriend', mood);
                       setEditingGfMood(false);
                     }}
                     className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition truncate"

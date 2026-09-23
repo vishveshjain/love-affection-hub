@@ -3,6 +3,7 @@ import { useCouple } from '../../context/CoupleContext';
 import { DreamItem } from '../../types';
 import { loadDreams, saveDreams } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
+import { realtimeHub, getClientId } from '../../utils/realtime';
 import confetti from 'canvas-confetti';
 import { Moon, Sparkles, Plus, Heart, Cloud, Compass } from 'lucide-react';
 
@@ -20,6 +21,15 @@ export const DreamJournal: React.FC = () => {
     saveDreams(dreams);
   }, [dreams]);
 
+  useEffect(() => {
+    const unsub = realtimeHub.subscribe((payload) => {
+      if (payload.type === 'DREAM_UPDATE' && Array.isArray(payload.data?.dreams)) {
+        setDreams(payload.data.dreams);
+      }
+    });
+    return unsub;
+  }, []);
+
   const handleAddDream = (e: React.FormEvent) => {
     e.preventDefault();
     if (!dreamTitle.trim() || !dreamContent.trim()) return;
@@ -35,10 +45,20 @@ export const DreamJournal: React.FC = () => {
       hearts: 1,
     };
 
-    setDreams([newDream, ...dreams]);
+    const updated = [newDream, ...dreams];
+    setDreams(updated);
     setDreamTitle('');
     setDreamContent('');
     setShowAddModal(false);
+
+    realtimeHub.publish({
+      type: 'DREAM_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { dreams: updated },
+      timestamp: Date.now(),
+    });
 
     soundFx.playCelebration();
     confetti({
@@ -50,10 +70,18 @@ export const DreamJournal: React.FC = () => {
   };
 
   const handleLikeDream = (id: string) => {
-    setDreams((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, hearts: d.hearts + 1 } : d))
-    );
+    const updated = dreams.map((d) => (d.id === id ? { ...d, hearts: d.hearts + 1 } : d));
+    setDreams(updated);
     soundFx.playPop(620, 0.08);
+
+    realtimeHub.publish({
+      type: 'DREAM_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { dreams: updated },
+      timestamp: Date.now(),
+    });
   };
 
   const filteredDreams = dreams.filter((d) =>

@@ -23,7 +23,7 @@ import {
 const LOVE_EMOJIS = ['💖', '💋', '🥰', '🫂', '💍', '🌹', '💌', '✨', '🍓', '🧸', '🥺', '👑', '🍰', '🌸'];
 
 export const LiveCoupleChat: React.FC = () => {
-  const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, partnerRole } = useCouple();
+  const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, partnerRole, partnerOnline } = useCouple();
   const [messages, setMessages] = useState<ChatMessage[]>(loadChatMessages);
   const [inputText, setInputText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -53,9 +53,8 @@ export const LiveCoupleChat: React.FC = () => {
           return [...prev, incomingMsg];
         });
 
-        // If the message is fresh and from partner, play alert sound and haptic vibration
-        const isFresh = Date.now() - (incomingMsg.timestamp || 0) < 15000;
-        if (payload.senderRole !== profile.currentUserRole && isFresh) {
+        // If the message is live (not historical), play alert sound and haptic vibration
+        if (!payload.isHistorical) {
           soundFx.playPop(650, 0.08);
           if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
             try {
@@ -66,8 +65,7 @@ export const LiveCoupleChat: React.FC = () => {
           }
         }
       } else if (payload.type === 'LOVE_BUZZ') {
-        const isFresh = Date.now() - (payload.timestamp || 0) < 15000;
-        if (payload.senderRole !== profile.currentUserRole && isFresh) {
+        if (!payload.isHistorical) {
           soundFx.playCelebration();
           confetti({
             particleCount: 65,
@@ -90,7 +88,7 @@ export const LiveCoupleChat: React.FC = () => {
       unsubscribeStatus();
       unsubscribeMessages();
     };
-  }, [roomKey, profile.currentUserRole]);
+  }, [roomKey]);
 
   // Persist messages in local storage and auto-scroll
   useEffect(() => {
@@ -185,8 +183,9 @@ export const LiveCoupleChat: React.FC = () => {
             </div>
             <span
               className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${
-                isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+                partnerOnline ? 'bg-emerald-500 animate-pulse' : isConnected ? 'bg-blue-400' : 'bg-amber-400'
               }`}
+              title={partnerOnline ? `${partnerName} is online right now` : isConnected ? 'Connected to room' : 'Connecting...'}
             />
           </div>
           <div>
@@ -200,11 +199,16 @@ export const LiveCoupleChat: React.FC = () => {
             </div>
 
             {/* Connection Status Badge */}
-            <div className="flex items-center gap-1 text-xs">
-              {isConnected ? (
-                <span className="text-emerald-600 font-semibold flex items-center gap-1">
+            <div className="flex items-center gap-1.5 text-xs">
+              {partnerOnline ? (
+                <span className="text-emerald-600 font-bold flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+                  <span>{partnerName} is active right now 💕</span>
+                </span>
+              ) : isConnected ? (
+                <span className="text-emerald-600/80 font-medium flex items-center gap-1">
                   <Wifi className="w-3 h-3 text-emerald-500" />
-                  <span>Live Online (Across the Internet ☁️)</span>
+                  <span>Room Connected ☁️</span>
                 </span>
               ) : (
                 <span className="text-amber-600 font-medium flex items-center gap-1">

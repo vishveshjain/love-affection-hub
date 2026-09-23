@@ -19,7 +19,7 @@ import {
 import { soundFx } from '../utils/audio';
 
 import { getRandomWhisper } from '../utils/whispers';
-import { realtimeHub, getRoomKey } from '../utils/realtime';
+import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -32,12 +32,15 @@ interface CoupleContextType {
   partnerName: string;
   partnerPhoto: string;
   partnerRole: UserRole;
+  partnerOnline: boolean;
   updateProfile: (updates: Partial<CoupleProfile>) => void;
   switchCurrentUserRole: (role: UserRole) => void;
-  triggerAction: (action: AffectionActionType, customMsg?: string, skipPublish?: boolean) => void;
+  triggerAction: (action: AffectionActionType, customMsg?: string, incomingPayload?: RealtimePayload | boolean) => void;
   dismissAction: () => void;
   setShowOnboarding: (show: boolean) => void;
   updateCoupons: (coupons: ScratchCoupon[]) => void;
+  broadcastMoodChange: (role: 'boyfriend' | 'girlfriend', mood: string) => void;
+  broadcastCouponChange: (coupons: ScratchCoupon[]) => void;
   resetAllData: () => void;
 }
 
@@ -48,6 +51,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [stats, setStats] = useState<AffectionStats>(loadStats);
   const [coupons, setCoupons] = useState<ScratchCoupon[]>(loadCoupons);
   const [showOnboarding, setShowOnboarding] = useState<boolean>(!profile.isConfigured);
+  const [partnerOnline, setPartnerOnline] = useState<boolean>(false);
 
   const [actionState, setActionState] = useState<ActionAnimationState>({
     active: false,
@@ -93,11 +97,19 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     soundFx.playPop(520, 0.08);
   };
 
-  const triggerAction = (action: AffectionActionType, customMsg?: string, skipPublish = false) => {
-    const senderRole = skipPublish ? partnerRole : profile.currentUserRole;
-    const targetRole = skipPublish ? profile.currentUserRole : partnerRole;
-    const senderName = skipPublish ? partnerName : currentUserName;
-    const targetName = skipPublish ? currentUserName : partnerName;
+  const triggerAction = (
+    action: AffectionActionType,
+    customMsg?: string,
+    incomingPayload?: RealtimePayload | boolean
+  ) => {
+    const isRemote = typeof incomingPayload === 'object' && incomingPayload !== null;
+    const remotePayload = isRemote ? (incomingPayload as RealtimePayload) : undefined;
+
+    // If remotely triggered by partner, preserve their exact senderRole/targetRole
+    const senderRole: UserRole = remotePayload?.senderRole || profile.currentUserRole;
+    const targetRole: UserRole = remotePayload?.targetRole || partnerRole;
+    const senderName: string = remotePayload?.senderName || currentUserName;
+    const targetName: string = remotePayload?.targetName || partnerName;
 
     let defaultMsg = '';
     switch (action) {
@@ -199,11 +211,15 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       sweetMessage: finalMsg,
     });
 
-    if (!skipPublish) {
+    // Only publish if this was locally initiated
+    if (!isRemote && incomingPayload !== true) {
       realtimeHub.publish({
         type: 'LIVE_AFFECTION',
+        clientId: getClientId(),
         senderRole: profile.currentUserRole,
-        senderName,
+        targetRole: partnerRole,
+        senderName: currentUserName,
+        targetName: partnerName,
         data: { action, customMsg: finalMsg },
         timestamp: Date.now(),
       });
@@ -215,25 +231,73 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, 4200);
   };
 
-  useEffect(() => {
-    realtimeHub.connect(getRoomKey());
-    const unsubscribe = realtimeHub.subscribe((payload) => {
-      if (payload.type === 'LIVE_AFFECTION') {
-        const isFresh = Date.now() - (payload.timestamp || 0) < 15000;
-        if (payload.senderRole !== profile.currentUserRole && payload.data?.action && isFresh) {
-          triggerAction(payload.data.action, payload.data.customMsg, true);
-        }
-      }
+  const broadcastMoodChange = (role: 'boyfriend' | 'girlfriend', mood: string) => {
+    setProfile((prev) => ({
+      ...prev,
+      [role === 'boyfriend' ? 'boyfriendMood' : 'girlfriendMood']: mood,
+    }));
+    realtimeHub.publish({
+      type: 'MOOD_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { role, mood },
+      timestamp: Date.now(),
     });
-    return unsubscribe;
-  }, [profile.currentUserRole]);
+  };
 
-  const dismissAction = () => {
-    setActionState((prev) => ({ ...prev, active: false }));
+  const broadcastCouponChange = (newCoupons: ScratchCoupon[]) => {
+    setCoupons(newCoupons);
+    realtimeHub.publish({
+      type: 'COUPON_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { coupons: newCoupons },
+      timestamp: Date.now(),
+    });
   };
 
   const updateCoupons = (newCoupons: ScratchCoupon[]) => {
-    setCoupons(newCoupons);
+    broadcastCouponChange(newCoupons);
+  };
+
+  useEffect(() => {
+    realtimeHub.connect(getRoomKey());
+    realtimeHub.setUserInfo(profile.currentUserRole, currentUserName);
+
+    const unsubPresence = realtimeHub.onPartnerPresenceChange((online) => {
+      setPartnerOnline(online);
+    });
+
+    const unsubEvents = realtimeHub.subscribe((payload) => {
+      // realtimeHub already eliminates self-echo via clientId
+      if (payload.type === 'LIVE_AFFECTION') {
+        if (payload.data?.action && !payload.isHistorical) {
+          triggerAction(payload.data.action, payload.data.customMsg, payload);
+        }
+      } else if (payload.type === 'MOOD_UPDATE') {
+        if (payload.data?.role && payload.data?.mood) {
+          setProfile((prev) => ({
+            ...prev,
+            [payload.data.role === 'boyfriend' ? 'boyfriendMood' : 'girlfriendMood']: payload.data.mood,
+          }));
+        }
+      } else if (payload.type === 'COUPON_UPDATE') {
+        if (Array.isArray(payload.data?.coupons)) {
+          setCoupons(payload.data.coupons);
+        }
+      }
+    });
+
+    return () => {
+      unsubPresence();
+      unsubEvents();
+    };
+  }, [profile.currentUserRole, currentUserName, partnerRole, partnerName]);
+
+  const dismissAction = () => {
+    setActionState((prev) => ({ ...prev, active: false }));
   };
 
   const resetAllData = () => {
@@ -254,12 +318,15 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         partnerName,
         partnerPhoto,
         partnerRole,
+        partnerOnline,
         updateProfile,
         switchCurrentUserRole,
         triggerAction,
         dismissAction,
         setShowOnboarding,
         updateCoupons,
+        broadcastMoodChange,
+        broadcastCouponChange,
         resetAllData,
       }}
     >
