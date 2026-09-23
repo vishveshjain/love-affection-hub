@@ -1,5 +1,5 @@
-// Realtime Internet Sync Engine using ntfy.sh pub/sub over SSE (Server-Sent Events) and CORS POST
-// Enables true cross-device, cross-network, cross-country real-time communication without requiring private servers.
+// Realtime Internet Sync Engine using high-availability European and global ntfy clusters with automatic failover
+// Enables true cross-device, cross-network, cross-country real-time communication.
 
 export type RealtimeEventType =
   | 'CHAT_MESSAGE'
@@ -28,6 +28,12 @@ export interface RealtimePayload {
 const DEFAULT_ROOM_KEY = 'vishvesh-laura-love-nest-2026';
 const ROOM_STORAGE_KEY = 'love_app_realtime_room_key_v1';
 const CLIENT_STORAGE_KEY = 'love_app_client_id_v2';
+
+// Primary and fallback high-availability servers that support CORS and worldwide access
+const SERVERS = [
+  'https://ntfy.adminforge.de',
+  'https://ntfy.tedomum.fr',
+];
 
 let cachedClientId = '';
 
@@ -66,7 +72,6 @@ export function setRoomKey(key: string): void {
 }
 
 export function getTopicName(roomKey: string): string {
-  // Sanitize for ntfy topic naming: letters, numbers, hyphens
   const clean = roomKey.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
   return `love-${clean}`;
 }
@@ -74,6 +79,7 @@ export function getTopicName(roomKey: string): string {
 export class RealtimeService {
   private eventSource: EventSource | null = null;
   private currentRoomKey: string = '';
+  private currentServerIndex: number = 0;
   private listeners: ((payload: RealtimePayload) => void)[] = [];
   private statusListeners: ((isConnected: boolean) => void)[] = [];
   private presenceListeners: ((isOnline: boolean, partnerName?: string) => void)[] = [];
@@ -102,18 +108,22 @@ export class RealtimeService {
       // Ignore
     }
 
-    // Monitor partner presence freshness
+    // Monitor partner presence freshness every 4 seconds
     if (typeof window !== 'undefined') {
       this.presenceCheckTimer = setInterval(() => {
-        const isOnline = Date.now() - this.lastPartnerTimestamp < 22000;
+        const isOnline = Date.now() - this.lastPartnerTimestamp < 35000;
         this.notifyPresence(isOnline, this.partnerName);
-      }, 3000);
+      }, 4000);
     }
   }
 
   public setUserInfo(role: 'boyfriend' | 'girlfriend', name: string) {
     this.currentRole = role;
     this.currentUserName = name;
+  }
+
+  private get activeServer(): string {
+    return SERVERS[this.currentServerIndex % SERVERS.length];
   }
 
   public connect(roomKey: string) {
@@ -125,16 +135,16 @@ export class RealtimeService {
     this.currentRoomKey = roomKey;
     const topic = getTopicName(roomKey);
 
-    // Initial historical message fetch (only dispatch chat messages)
+    // Initial historical message fetch
     this.fetchRecentHistory(topic);
 
     // Connect SSE
     this.initEventSource(topic);
 
-    // Fallback poll every 4 seconds to guarantee zero missed events (mobile resilience)
+    // Fallback poll every 5 seconds for mobile network resilience
     this.fallbackPollTimer = setInterval(() => {
       this.pollRecentUpdates(topic);
-    }, 4000);
+    }, 5000);
 
     // Start sending heartbeat to signal presence
     this.startHeartbeat();
@@ -146,7 +156,7 @@ export class RealtimeService {
         this.eventSource.close();
       }
 
-      const sseUrl = `https://ntfy.sh/${topic}/sse`;
+      const sseUrl = `${this.activeServer}/${topic}/sse`;
       this.eventSource = new EventSource(sseUrl);
 
       this.eventSource.onopen = () => {
@@ -171,13 +181,14 @@ export class RealtimeService {
       this.eventSource.onerror = () => {
         this.isConnected = false;
         this.notifyStatus(false);
-        // Try reconnecting in 3 seconds
+        // Switch to fallback server on error
+        this.currentServerIndex = (this.currentServerIndex + 1) % SERVERS.length;
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => {
           if (this.currentRoomKey) {
             this.initEventSource(topic);
           }
-        }, 3000);
+        }, 2500);
       };
     } catch (e) {
       console.error('Failed to init EventSource:', e);
@@ -188,7 +199,7 @@ export class RealtimeService {
 
   private async fetchRecentHistory(topic: string) {
     try {
-      const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=all`);
+      const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=all`);
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n');
@@ -200,7 +211,6 @@ export class RealtimeService {
               const payload: RealtimePayload = JSON.parse(parsed.message);
               if (!payload.id && parsed.id) payload.id = parsed.id;
               
-              // Record all message IDs as seen
               if (payload.id) this.seenIds.add(payload.id);
 
               // ONLY dispatch historical CHAT_MESSAGE, NOT LIVE_AFFECTION
@@ -221,8 +231,7 @@ export class RealtimeService {
 
   private async pollRecentUpdates(topic: string) {
     try {
-      // Poll events from the last 20 seconds
-      const res = await fetch(`https://ntfy.sh/${topic}/json?poll=1&since=20s`);
+      const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=30s`);
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n');
@@ -248,11 +257,10 @@ export class RealtimeService {
 
   private startHeartbeat() {
     clearInterval(this.heartbeatTimer);
-    // Send immediate heartbeat
     this.sendHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       this.sendHeartbeat();
-    }, 8000);
+    }, 15000);
   }
 
   private sendHeartbeat() {
@@ -305,34 +313,37 @@ export class RealtimeService {
       timestamp: payload.timestamp || Date.now(),
     };
 
-    // Mark our own message ID as seen
     if (fullPayload.id) {
       this.seenIds.add(fullPayload.id);
     }
 
-    // Broadcast locally to any other open tabs on this machine
+    // Broadcast locally to any other open tabs on this device
     try {
       this.broadcastChannel?.postMessage(fullPayload);
     } catch {
       // Ignore
     }
 
-    // Publish to ntfy.sh over the internet
     const topic = getTopicName(this.currentRoomKey || getRoomKey());
-    try {
-      const res = await fetch(`https://ntfy.sh/${topic}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Title': `Love Hub - ${fullPayload.type}`,
-        },
-        body: JSON.stringify(fullPayload),
-      });
-      return res.ok;
-    } catch (e) {
-      console.error('Failed to publish realtime message to internet:', e);
-      return false;
+    const bodyStr = JSON.stringify(fullPayload);
+
+    // Try primary server, fallback to secondary if needed
+    for (let i = 0; i < SERVERS.length; i++) {
+      const server = SERVERS[(this.currentServerIndex + i) % SERVERS.length];
+      try {
+        const res = await fetch(`${server}/${topic}`, {
+          method: 'POST',
+          body: bodyStr,
+        });
+        if (res.ok) {
+          return true;
+        }
+      } catch {
+        // Try next server
+      }
     }
+
+    return false;
   }
 
   public subscribe(callback: (payload: RealtimePayload) => void) {
@@ -352,7 +363,7 @@ export class RealtimeService {
 
   public onPartnerPresenceChange(callback: (isOnline: boolean, partnerName?: string) => void) {
     this.presenceListeners.push(callback);
-    const isOnline = Date.now() - this.lastPartnerTimestamp < 22000;
+    const isOnline = Date.now() - this.lastPartnerTimestamp < 35000;
     callback(isOnline, this.partnerName);
     return () => {
       this.presenceListeners = this.presenceListeners.filter((l) => l !== callback);

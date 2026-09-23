@@ -78,6 +78,7 @@ export interface FlamesResult {
 
 export interface ChatMessage {
   id: string;
+  senderClientId?: string;
   senderRole: UserRole;
   senderName: string;
   senderPhoto: string;

@@ -3,7 +3,7 @@ import { useCouple } from '../../context/CoupleContext';
 import { ChatMessage } from '../../types';
 import { loadChatMessages, saveChatMessages } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
-import { realtimeHub, getRoomKey, setRoomKey, RealtimePayload } from '../../utils/realtime';
+import { realtimeHub, getRoomKey, setRoomKey, getClientId, RealtimePayload } from '../../utils/realtime';
 import confetti from 'canvas-confetti';
 import {
   Send,
@@ -102,6 +102,7 @@ export const LiveCoupleChat: React.FC = () => {
 
     const newMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      senderClientId: getClientId(),
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
       senderPhoto: currentUserPhoto,
@@ -264,7 +265,9 @@ export const LiveCoupleChat: React.FC = () => {
           </div>
         ) : (
           messages.map((msg) => {
-            const isMe = msg.senderRole === profile.currentUserRole;
+            const isMe = msg.senderClientId
+              ? msg.senderClientId === getClientId()
+              : msg.senderName === currentUserName || msg.senderRole === profile.currentUserRole;
             return (
               <div
                 key={msg.id}
