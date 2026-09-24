@@ -241,6 +241,7 @@ class RomanticVideoCallService {
   >();
   private mediaPromise: Promise<MediaStream | null> | null = null;
   private offerRetryTimer: any = null;
+  private callInviteTimer: any = null;
 
   public status: 'idle' | 'calling' | 'incoming' | 'connected' = 'idle';
   public currentCallId: string | null = null;
@@ -400,7 +401,7 @@ class RomanticVideoCallService {
     return this.mediaPromise;
   }
 
-  // Start outgoing video call to partner (sends call invitation immediately with 0ms delay)
+  // Start outgoing video call to partner (sends call invitation immediately with 0ms delay and re-broadcasts)
   public async startCall(myRole: UserRole, myName: string, theme: RomanticThemeId = 'moonlight'): Promise<boolean> {
     const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     this.currentCallId = callId;
@@ -415,19 +416,36 @@ class RomanticVideoCallService {
     romanticMusic.startRomanticAmbience(0.2);
 
     // 1. Broadcast call invitation to partner IMMEDIATELY (0ms delay for instant ringing)
-    this.sendSignal(
-      {
-        signalType: 'call-invite',
-        callId,
-        callerRole: myRole,
-        callerName: myName,
-        themeId: theme,
-      },
-      myRole,
-      myName
-    ).catch(() => {});
+    const sendInvite = () => {
+      this.sendSignal(
+        {
+          signalType: 'call-invite',
+          callId,
+          callerRole: myRole,
+          callerName: myName,
+          themeId: theme,
+        },
+        myRole,
+        myName
+      ).catch(() => {});
+    };
+    sendInvite();
 
-    // 2. Pre-acquire local camera & mic in background while phone is ringing
+    // 2. Clear any prior invite loop and re-broadcast every 2.5s while in 'calling' state (up to 15 attempts = 37.5s)
+    clearInterval(this.callInviteTimer);
+    let inviteAttempts = 0;
+    this.callInviteTimer = setInterval(() => {
+      inviteAttempts++;
+      if (this.status !== 'calling' || this.currentCallId !== callId || inviteAttempts > 15) {
+        clearInterval(this.callInviteTimer);
+        this.callInviteTimer = null;
+        return;
+      }
+      console.log(`Re-broadcasting call-invite (attempt ${inviteAttempts + 1})...`);
+      sendInvite();
+    }, 2500);
+
+    // 3. Pre-acquire local camera & mic in background while phone is ringing
     this.getLocalMedia(true, true).catch((err) => {
       console.warn('Caller background getLocalMedia:', err);
     });
@@ -435,7 +453,7 @@ class RomanticVideoCallService {
     return true;
   }
 
-  // Accept incoming call from partner (sends accept signal immediately with 0ms delay)
+  // Accept incoming call from partner (sends accept signal immediately with awaited dispatch + confirmations)
   public async acceptCall(myRole: UserRole, myName: string) {
     romanticMusic.stopRinging();
     romanticMusic.playConnectedChime();
@@ -445,18 +463,33 @@ class RomanticVideoCallService {
     this.status = 'connected';
     this.notify();
 
-    // 1. Dispatch accept signal IMMEDIATELY to notify caller to initiate WebRTC offer
-    this.sendSignal(
-      {
-        signalType: 'call-accept',
-        callId: this.currentCallId || undefined,
-        answererRole: myRole,
-      },
-      myRole,
-      myName
-    ).catch(() => {});
+    const acceptPayload: VideoSignalData = {
+      signalType: 'call-accept',
+      callId: this.currentCallId || undefined,
+      answererRole: myRole,
+    };
 
-    // 2. Acquire camera & mic in parallel so answerer is ready when offer arrives
+    // 1. Dispatch accept signal IMMEDIATELY with await so Android Chrome doesn't abort it before component unmount
+    try {
+      await this.sendSignal(acceptPayload, myRole, myName);
+    } catch (e) {
+      console.warn('acceptCall initial send error:', e);
+    }
+
+    // 2. Re-send confirmation after 250ms and 600ms to guarantee delivery across mobile networks
+    setTimeout(() => {
+      if (this.status === 'connected') {
+        this.sendSignal(acceptPayload, myRole, myName).catch(() => {});
+      }
+    }, 250);
+
+    setTimeout(() => {
+      if (this.status === 'connected') {
+        this.sendSignal(acceptPayload, myRole, myName).catch(() => {});
+      }
+    }, 600);
+
+    // 3. Acquire camera & mic in parallel so answerer is ready when offer arrives
     this.getLocalMedia(true, true).catch((err) => {
       console.warn('Answerer background getLocalMedia:', err);
     });
@@ -464,6 +497,8 @@ class RomanticVideoCallService {
 
   // Decline incoming call
   public async declineCall(myRole: UserRole) {
+    clearInterval(this.callInviteTimer);
+    this.callInviteTimer = null;
     romanticMusic.stopRinging();
     const decliningCallId = this.currentCallId;
     this.status = 'idle';
@@ -482,6 +517,8 @@ class RomanticVideoCallService {
 
   // End call
   public async endCall(notifyRemote: boolean = true) {
+    clearInterval(this.callInviteTimer);
+    this.callInviteTimer = null;
     clearTimeout(this.offerRetryTimer);
     this.offerRetryTimer = null;
     romanticMusic.stopRinging();
@@ -778,18 +815,22 @@ class RomanticVideoCallService {
       await pc.setLocalDescription(offer);
 
       // Wait briefly so initial STUN/TURN candidates are embedded directly into SDP offer
-      await this.waitForIceGathering(pc, 700);
+      await this.waitForIceGathering(pc, 900);
 
       const finalOffer = pc.localDescription || offer;
       await this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole);
 
-      // Resilience against mobile packet drop: retry sending offer after 3s if no answer has arrived yet
-      this.offerRetryTimer = setTimeout(async () => {
-        if (this.peerConnection === pc && !pc.remoteDescription && this.status === 'connected') {
-          console.log('No answer received yet after 3s, re-transmitting WebRTC offer to partner...');
-          await this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole);
+      // Resilience against mobile packet drop: retry sending offer every 2.5s if no answer has arrived yet (up to 4 attempts)
+      let offerAttempts = 0;
+      const retryOffer = () => {
+        if (this.peerConnection === pc && !pc.remoteDescription && this.status === 'connected' && offerAttempts < 4) {
+          offerAttempts++;
+          console.log(`Re-transmitting WebRTC offer to partner (attempt ${offerAttempts})...`);
+          this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole).catch(() => {});
+          this.offerRetryTimer = setTimeout(retryOffer, 2500);
         }
-      }, 3000);
+      };
+      this.offerRetryTimer = setTimeout(retryOffer, 2500);
     } catch (e) {
       console.error('Failed to create WebRTC offer:', e);
     }
@@ -798,6 +839,14 @@ class RomanticVideoCallService {
   // Handle incoming WebRTC Offer & respond with Answer (Answerer)
   private async handleWebRTCOffer(offerSdp: RTCSessionDescriptionInit, senderRole?: UserRole) {
     clearTimeout(this.offerRetryTimer);
+
+    // If answer has already been created for this peer connection, avoid destroying connection & re-transmit existing answer
+    if (this.peerConnection && this.peerConnection.localDescription && this.peerConnection.remoteDescription) {
+      console.log('Already generated answer for this session, re-sending existing answer to partner');
+      await this.sendSdpSignal('webrtc-answer', this.peerConnection.localDescription, this.myRole);
+      return;
+    }
+
     // Ensure Answerer has acquired camera & mic before creating answer
     if (!this.localStream) {
       await this.getLocalMedia(true, true);
@@ -811,7 +860,7 @@ class RomanticVideoCallService {
       await pc.setLocalDescription(answer);
 
       // Wait briefly so initial STUN/TURN candidates are embedded directly into SDP answer
-      await this.waitForIceGathering(pc, 700);
+      await this.waitForIceGathering(pc, 900);
 
       // Process any early candidates received before remote description was ready
       while (this.queuedCandidates.length > 0) {
@@ -825,6 +874,13 @@ class RomanticVideoCallService {
 
       const finalAnswer = pc.localDescription || answer;
       await this.sendSdpSignal('webrtc-answer', finalAnswer, this.myRole);
+
+      // Re-send answer after 300ms as a confirmation packet for mobile packet loss
+      setTimeout(() => {
+        if (this.peerConnection === pc && pc.localDescription) {
+          this.sendSdpSignal('webrtc-answer', pc.localDescription, this.myRole).catch(() => {});
+        }
+      }, 300);
     } catch (e) {
       console.error('Failed to handle WebRTC offer:', e);
     }
@@ -871,8 +927,31 @@ class RomanticVideoCallService {
       return;
     }
 
-    // 2. Call ID validation & Glare Resolution:
+    // 2. Call Termination: If partner ended the call, immediately tear down without requiring session match
+    if (data.signalType === 'call-end') {
+      if (this.status !== 'idle') {
+        console.log('Received call-end signal, ending call');
+        this.endCall(false);
+      }
+      return;
+    }
+
+    // 3. Call Invitation & Glare Resolution:
     if (data.signalType === 'call-invite') {
+      // Auto-healing: Answerer already accepted and connected, but caller is still calling because they haven't received call-accept yet!
+      if (this.status === 'connected' && data.callId && data.callId === this.currentCallId) {
+        console.log('Received repeated call-invite for active call; echoing call-accept to heal caller state');
+        this.sendSignal({
+          signalType: 'call-accept',
+          callId: this.currentCallId,
+          answererRole: this.myRole,
+        }, this.myRole, this.callerName).catch(() => {});
+        return;
+      }
+      if (this.status === 'incoming' && data.callId === this.currentCallId) {
+        // Already ringing for this call; keep ringing
+        return;
+      }
       if (this.status === 'idle') {
         this.currentCallId = data.callId || `call_${Date.now()}`;
         this.status = 'incoming';
@@ -907,11 +986,17 @@ class RomanticVideoCallService {
 
     switch (data.signalType) {
       case 'call-accept':
+        clearInterval(this.callInviteTimer);
+        this.callInviteTimer = null;
         if (this.status === 'calling') {
           this.status = 'connected';
           romanticMusic.playConnectedChime();
           this.notify();
           // Caller now kicks off the WebRTC offer
+          await this.initiateWebRTCOffer(this.callerRole || this.myRole);
+        } else if (this.status === 'connected' && (!this.peerConnection || !this.peerConnection.remoteDescription)) {
+          // If we received repeated accept and haven't established remote connection, re-initiate offer
+          console.log('Received repeated call-accept while connected; re-initiating WebRTC offer');
           await this.initiateWebRTCOffer(this.callerRole || this.myRole);
         }
         break;
@@ -920,12 +1005,6 @@ class RomanticVideoCallService {
         if (this.status === 'calling') {
           this.endCall(false);
           alert(`${senderName || 'Your partner'} is unable to answer right now.`);
-        }
-        break;
-
-      case 'call-end':
-        if (this.status !== 'idle') {
-          this.endCall(false);
         }
         break;
 

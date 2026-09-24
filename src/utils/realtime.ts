@@ -118,12 +118,20 @@ export class RealtimeService {
       // Ignore
     }
 
-    // Monitor partner presence freshness every 4 seconds
+    // Monitor partner presence freshness every 3 seconds
     if (typeof window !== 'undefined') {
       this.presenceCheckTimer = setInterval(() => {
-        const isOnline = Date.now() - this.lastPartnerTimestamp < 35000;
+        const isOnline = Date.now() - this.lastPartnerTimestamp < 26000;
         this.notifyPresence(isOnline, this.partnerName);
-      }, 4000);
+      }, 3000);
+
+      window.addEventListener('focus', () => this.sendHeartbeat());
+      window.addEventListener('online', () => this.sendHeartbeat());
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.sendHeartbeat();
+        }
+      });
     }
   }
 
@@ -250,6 +258,19 @@ export class RealtimeService {
               
               if (payload.id) this.seenIds.add(payload.id);
 
+              // Check if partner was active recently in historical messages (immediate presence on load)
+              const msgTime = payload.timestamp || (parsed.time ? parsed.time * 1000 : 0);
+              if (
+                msgTime &&
+                Date.now() - msgTime < 26000 &&
+                payload.clientId !== getClientId() &&
+                payload.senderRole !== this.currentRole
+              ) {
+                this.lastPartnerTimestamp = Math.max(this.lastPartnerTimestamp, msgTime);
+                if (payload.senderName) this.partnerName = payload.senderName;
+                this.notifyPresence(true, this.partnerName);
+              }
+
               // Dispatch historical state (Chat, Dreams, Notes, Milestones, Coupons, Memories)
               if (
                 payload.type === 'CHAT_MESSAGE' ||
@@ -306,7 +327,7 @@ export class RealtimeService {
     this.sendHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       this.sendHeartbeat();
-    }, 15000);
+    }, 8000);
   }
 
   private sendHeartbeat() {
@@ -341,12 +362,10 @@ export class RealtimeService {
       }
     }
 
-    // Handle heartbeat presence
-    if (payload.type === 'HEARTBEAT') {
-      this.lastPartnerTimestamp = Date.now();
-      if (payload.senderName) this.partnerName = payload.senderName;
-      this.notifyPresence(true, this.partnerName);
-    }
+    // Any event received from partner proves partner is actively online right now!
+    this.lastPartnerTimestamp = Date.now();
+    if (payload.senderName) this.partnerName = payload.senderName;
+    this.notifyPresence(true, this.partnerName);
 
     this.notifyListeners(payload);
   }
@@ -380,6 +399,7 @@ export class RealtimeService {
         const res = await fetch(`${targetServer}/${topic}`, {
           method: 'POST',
           body: bodyStr,
+          keepalive: true,
         });
         return res.ok;
       } catch {
@@ -387,12 +407,13 @@ export class RealtimeService {
       }
     }
 
-    // Broadcast to ALL servers simultaneously so that partner receives it on whichever server they are connected to!
+    // Broadcast to ALL servers simultaneously with keepalive to guarantee delivery on mobile/tab-switch
     const results = await Promise.allSettled(
       SERVERS.map((server) =>
         fetch(`${server}/${topic}`, {
           method: 'POST',
           body: bodyStr,
+          keepalive: true,
         })
       )
     );
@@ -417,7 +438,7 @@ export class RealtimeService {
 
   public onPartnerPresenceChange(callback: (isOnline: boolean, partnerName?: string) => void) {
     this.presenceListeners.push(callback);
-    const isOnline = Date.now() - this.lastPartnerTimestamp < 35000;
+    const isOnline = Date.now() - this.lastPartnerTimestamp < 26000;
     callback(isOnline, this.partnerName);
     return () => {
       this.presenceListeners = this.presenceListeners.filter((l) => l !== callback);
