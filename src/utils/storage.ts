@@ -412,13 +412,13 @@ export function saveChatMessages(messages: ChatMessage[]): void {
   }
 }
 
-// Convert uploaded file to high-definition, crystal-clear compressed base64 Data URL
-// Resizes camera/phone photos down to razor-sharp 360px retina quality (~25-35KB),
-// perfectly calibrated for dedicated cloud storage (up to 42,000 chars base64 per photo).
+// Convert uploaded file to ultra-high-definition, crystal-clear compressed base64 Data URL
+// Resizes camera/phone photos down to razor-sharp 380px retina quality (~30-45KB),
+// perfectly calibrated for individual dedicated cloud storage bins (up to 65,000 chars base64).
 export function fileToDataUrl(
   file: File,
-  maxDimension: number = 360,
-  initialQuality: number = 0.84
+  maxDimension: number = 380,
+  initialQuality: number = 0.86
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -438,9 +438,9 @@ export function fileToDataUrl(
           let q = initialQuality;
           let bestResult = '';
 
-          // Target max base64 length: 42,000 chars (~31.5KB binary).
-          // Dedicated photo bin abdedac has 100KB limit, accommodating two HD photos (~84KB max total).
-          // 360px with high smoothing quality gives crystal clear, razor sharp rendering on 2x/3x retina mobile screens.
+          // Target max base64 length: 65,000 chars (~48KB binary).
+          // Dedicated individual photo bins (bfdafca for BF, cdeabbf for GF) each have 100KB limit for ONE photo.
+          // 380px with high smoothing quality gives ultra crystal-clear, razor sharp rendering on 2x/3x retina mobile screens.
           for (let attempt = 0; attempt < 5; attempt++) {
             const canvas = document.createElement('canvas');
             let width = img.width;
@@ -469,15 +469,15 @@ export function fileToDataUrl(
 
             const candidate = canvas.toDataURL('image/jpeg', q);
             bestResult = candidate;
-            if (candidate.length <= 42000) {
+            if (candidate.length <= 65000) {
               break;
             }
             // If slightly too large, reduce quality gradually first before reducing resolution
-            if (q > 0.68) {
-              q = Math.max(0.68, q - 0.08);
+            if (q > 0.70) {
+              q = Math.max(0.70, q - 0.08);
             } else {
               dim = Math.round(dim * 0.88);
-              q = 0.78;
+              q = 0.80;
             }
           }
 

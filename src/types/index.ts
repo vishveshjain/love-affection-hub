@@ -4,9 +4,11 @@ export interface CoupleProfile {
   currentUserRole: UserRole; // who is interacting right now
   boyfriendName: string;
   boyfriendPhoto: string;
+  boyfriendPhotoUpdatedAt?: number;
   boyfriendMood: string;
   girlfriendName: string;
   girlfriendPhoto: string;
+  girlfriendPhotoUpdatedAt?: number;
   girlfriendMood: string;
   relationshipStartDate: string; // YYYY-MM-DD
   isConfigured: boolean;

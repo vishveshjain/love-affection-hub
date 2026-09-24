@@ -38,18 +38,26 @@ export interface CloudCoupleData {
 const CLOUD_BIN_ID = 'fdfbbec';
 const CLOUD_ENDPOINT = `https://extendsclass.com/api/json-storage/bin/${CLOUD_BIN_ID}`;
 
-// Dedicated Photo Storage Bin (100KB capacity dedicated strictly to HD boyfriend and girlfriend photos)
-const PHOTO_BIN_ID = 'abdedac';
-const PHOTO_ENDPOINT = `https://extendsclass.com/api/json-storage/bin/${PHOTO_BIN_ID}`;
+// Dedicated Independent Photo Storage Bins (100KB capacity dedicated strictly to EACH person's individual photo)
+// Vishvesh writes to BF bin, Laura writes to GF bin. Zero race conditions, zero overwriting!
+const BF_PHOTO_BIN_ID = 'bfdafca';
+const BF_PHOTO_ENDPOINT = `https://extendsclass.com/api/json-storage/bin/${BF_PHOTO_BIN_ID}`;
+
+const GF_PHOTO_BIN_ID = 'cdeabbf';
+const GF_PHOTO_ENDPOINT = `https://extendsclass.com/api/json-storage/bin/${GF_PHOTO_BIN_ID}`;
 
 export interface CloudPhotos {
   boyfriendPhoto?: string;
+  boyfriendUpdatedAt?: number;
   girlfriendPhoto?: string;
+  girlfriendUpdatedAt?: number;
 }
 
 let inMemoryPhotos: CloudPhotos = {
   boyfriendPhoto: '',
+  boyfriendUpdatedAt: 0,
   girlfriendPhoto: '',
+  girlfriendUpdatedAt: 0,
 };
 
 type PhotoListener = (photos: CloudPhotos) => void;
@@ -289,8 +297,7 @@ export async function pushToCloudNow(): Promise<boolean> {
   }
 }
 
-export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' | 'coupleKey' | 'updatedAt'>>) {
-  const localProf = loadProfile();
+export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' | 'coupleKey' | 'updatedAt' | 'boyfriendPhoto' | 'girlfriendPhoto'>>) {
   const current: CloudCoupleData = inMemoryCloudData || {
     version: 2,
     coupleKey: 'vishvesh-laura-2026',
@@ -302,47 +309,15 @@ export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' |
     coupons: loadCoupons(),
     memories: loadMemoriesFromLocal(),
     stats: loadStats(),
-    boyfriendPhoto: isCustomPhoto(localProf.boyfriendPhoto) ? localProf.boyfriendPhoto : undefined,
-    girlfriendPhoto: isCustomPhoto(localProf.girlfriendPhoto) ? localProf.girlfriendPhoto : undefined,
   };
-
-  // Determine final boyfriendPhoto (custom photos ALWAYS win, defaults are NEVER saved)
-  const finalBfPhoto =
-    isCustomPhoto(partial.boyfriendPhoto)
-      ? partial.boyfriendPhoto
-      : isCustomPhoto(current.boyfriendPhoto)
-      ? current.boyfriendPhoto
-      : isCustomPhoto(localProf.boyfriendPhoto)
-      ? localProf.boyfriendPhoto
-      : undefined;
-
-  // Determine final girlfriendPhoto (custom photos ALWAYS win, defaults are NEVER saved)
-  const finalGfPhoto =
-    isCustomPhoto(partial.girlfriendPhoto)
-      ? partial.girlfriendPhoto
-      : isCustomPhoto(current.girlfriendPhoto)
-      ? current.girlfriendPhoto
-      : isCustomPhoto(localProf.girlfriendPhoto)
-      ? localProf.girlfriendPhoto
-      : undefined;
 
   const updated: CloudCoupleData = {
     ...current,
     ...partial,
-    boyfriendPhoto: finalBfPhoto,
-    girlfriendPhoto: finalGfPhoto,
     updatedAt: Date.now(),
   };
 
   inMemoryCloudData = updated;
-
-  // If this update was explicitly for a profile photo, push immediately to dedicated photo cloud bin
-  if (isCustomPhoto(partial.boyfriendPhoto)) {
-    savePhotoToCloud('boyfriend', partial.boyfriendPhoto!);
-  }
-  if (isCustomPhoto(partial.girlfriendPhoto)) {
-    savePhotoToCloud('girlfriend', partial.girlfriendPhoto!);
-  }
 
   // Debounced push to cloud to prevent excessive HTTP traffic
   clearTimeout(saveDebounceTimer);
@@ -359,92 +334,119 @@ export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' |
   }, 250);
 }
 
-export async function pushPhotosToCloudNow(): Promise<boolean> {
+export async function savePhotoToCloud(
+  role: 'boyfriend' | 'girlfriend',
+  photoDataUrl: string,
+  updatedAt: number = Date.now()
+): Promise<boolean> {
+  const isBf = role === 'boyfriend';
+  const endpoint = isBf ? BF_PHOTO_ENDPOINT : GF_PHOTO_ENDPOINT;
+
+  if (isBf) {
+    inMemoryPhotos.boyfriendPhoto = photoDataUrl;
+    inMemoryPhotos.boyfriendUpdatedAt = updatedAt;
+  } else {
+    inMemoryPhotos.girlfriendPhoto = photoDataUrl;
+    inMemoryPhotos.girlfriendUpdatedAt = updatedAt;
+  }
+  notifyPhotoListeners(inMemoryPhotos);
+
   try {
     const payload = {
-      boyfriendPhoto: inMemoryPhotos.boyfriendPhoto || '',
-      girlfriendPhoto: inMemoryPhotos.girlfriendPhoto || '',
+      photo: photoDataUrl,
+      updatedAt,
     };
-    const res = await fetch(PHOTO_ENDPOINT, {
+    const res = await fetch(endpoint, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
       body: JSON.stringify(payload),
     });
     return res.ok;
   } catch (err) {
-    console.warn('Failed pushing photos to dedicated cloud bin:', err);
-    return false;
-  }
-}
-
-export async function savePhotoToCloud(
-  role: 'boyfriend' | 'girlfriend',
-  photoDataUrl: string
-): Promise<boolean> {
-  try {
-    if (role === 'boyfriend') {
-      inMemoryPhotos.boyfriendPhoto = photoDataUrl;
-    } else {
-      inMemoryPhotos.girlfriendPhoto = photoDataUrl;
-    }
-    notifyPhotoListeners(inMemoryPhotos);
-    return await pushPhotosToCloudNow();
-  } catch (err) {
-    console.warn('Failed to save photo to cloud bin:', err);
+    console.warn(`Failed to save ${role} photo to dedicated bin:`, err);
     return false;
   }
 }
 
 export async function fetchPhotosFromCloud(): Promise<CloudPhotos | null> {
   try {
-    const res = await fetch(`${PHOTO_ENDPOINT}?t=${Date.now()}`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const data: CloudPhotos = await res.json();
-    if (data && typeof data === 'object') {
-      const localProf = loadProfile();
-      let changed = false;
-      let needsBackfill = false;
+    const localProf = loadProfile();
+    let localChanged = false;
 
-      // Sync boyfriend photo
-      if (isCustomPhoto(data.boyfriendPhoto)) {
-        inMemoryPhotos.boyfriendPhoto = data.boyfriendPhoto;
-        if (data.boyfriendPhoto !== localProf.boyfriendPhoto) {
-          localProf.boyfriendPhoto = data.boyfriendPhoto!;
-          changed = true;
+    // Cache-busting headers to prevent browser from returning 2-hour max-age cached response
+    const headers = {
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+    };
+    const cacheBuster = `_nocache=${Date.now()}_${Math.random()}`;
+
+    const [bfRes, gfRes] = await Promise.allSettled([
+      fetch(`${BF_PHOTO_ENDPOINT}?${cacheBuster}`, { method: 'GET', cache: 'no-store', headers }),
+      fetch(`${GF_PHOTO_ENDPOINT}?${cacheBuster}`, { method: 'GET', cache: 'no-store', headers }),
+    ]);
+
+    // Handle Boyfriend Photo
+    if (bfRes.status === 'fulfilled' && bfRes.value.ok) {
+      try {
+        const bfData = await bfRes.value.json();
+        if (bfData && isCustomPhoto(bfData.photo)) {
+          const cloudUpdatedAt = bfData.updatedAt || 1;
+          const localUpdatedAt = localProf.boyfriendPhotoUpdatedAt || 0;
+          if (cloudUpdatedAt >= localUpdatedAt) {
+            inMemoryPhotos.boyfriendPhoto = bfData.photo;
+            inMemoryPhotos.boyfriendUpdatedAt = cloudUpdatedAt;
+            if (localProf.boyfriendPhoto !== bfData.photo) {
+              localProf.boyfriendPhoto = bfData.photo;
+              localProf.boyfriendPhotoUpdatedAt = cloudUpdatedAt;
+              localChanged = true;
+            }
+          }
+        } else if (localProf.currentUserRole === 'boyfriend' && isCustomPhoto(localProf.boyfriendPhoto)) {
+          // If cloud is empty and local user is boyfriend, backfill their own photo
+          savePhotoToCloud('boyfriend', localProf.boyfriendPhoto, localProf.boyfriendPhotoUpdatedAt || Date.now());
         }
-      } else if (isCustomPhoto(localProf.boyfriendPhoto)) {
-        inMemoryPhotos.boyfriendPhoto = localProf.boyfriendPhoto;
-        needsBackfill = true;
+      } catch (err) {
+        console.warn('Error reading boyfriend photo from cloud:', err);
       }
-
-      // Sync girlfriend photo
-      if (isCustomPhoto(data.girlfriendPhoto)) {
-        inMemoryPhotos.girlfriendPhoto = data.girlfriendPhoto;
-        if (data.girlfriendPhoto !== localProf.girlfriendPhoto) {
-          localProf.girlfriendPhoto = data.girlfriendPhoto!;
-          changed = true;
-        }
-      } else if (isCustomPhoto(localProf.girlfriendPhoto)) {
-        inMemoryPhotos.girlfriendPhoto = localProf.girlfriendPhoto;
-        needsBackfill = true;
-      }
-
-      if (changed) {
-        saveProfile(localProf);
-      }
-
-      notifyPhotoListeners(inMemoryPhotos);
-
-      if (needsBackfill) {
-        pushPhotosToCloudNow();
-      }
-
-      return inMemoryPhotos;
     }
+
+    // Handle Girlfriend Photo
+    if (gfRes.status === 'fulfilled' && gfRes.value.ok) {
+      try {
+        const gfData = await gfRes.value.json();
+        if (gfData && isCustomPhoto(gfData.photo)) {
+          const cloudUpdatedAt = gfData.updatedAt || 1;
+          const localUpdatedAt = localProf.girlfriendPhotoUpdatedAt || 0;
+          if (cloudUpdatedAt >= localUpdatedAt) {
+            inMemoryPhotos.girlfriendPhoto = gfData.photo;
+            inMemoryPhotos.girlfriendUpdatedAt = cloudUpdatedAt;
+            if (localProf.girlfriendPhoto !== gfData.photo) {
+              localProf.girlfriendPhoto = gfData.photo;
+              localProf.girlfriendPhotoUpdatedAt = cloudUpdatedAt;
+              localChanged = true;
+            }
+          }
+        } else if (localProf.currentUserRole === 'girlfriend' && isCustomPhoto(localProf.girlfriendPhoto)) {
+          // If cloud is empty and local user is girlfriend, backfill their own photo
+          savePhotoToCloud('girlfriend', localProf.girlfriendPhoto, localProf.girlfriendPhotoUpdatedAt || Date.now());
+        }
+      } catch (err) {
+        console.warn('Error reading girlfriend photo from cloud:', err);
+      }
+    }
+
+    if (localChanged) {
+      saveProfile(localProf);
+    }
+
+    notifyPhotoListeners(inMemoryPhotos);
+    return inMemoryPhotos;
   } catch (err) {
-    console.warn('Error fetching photos from dedicated cloud bin:', err);
+    console.warn('Error in fetchPhotosFromCloud:', err);
   }
   return null;
 }
