@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { CoupleProvider, useCouple } from './context/CoupleContext';
 import { FloatingParticles } from './components/FloatingParticles';
 import { Navbar } from './components/Navbar';
@@ -26,6 +26,8 @@ import {
   Camera,
   Heart,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 type GameTab =
@@ -41,6 +43,17 @@ type GameTab =
 const MainContent: React.FC = () => {
   const { profile, resetAllData } = useCouple();
   const [activeTab, setActiveTab] = useState<GameTab>('chat');
+  const tabsRef = useRef<HTMLDivElement>(null);
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (tabsRef.current) {
+      const scrollAmount = 260;
+      tabsRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
 
   const tabs: { id: GameTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     {
@@ -110,43 +123,72 @@ const MainContent: React.FC = () => {
         <LoveCounter />
 
         {/* Interactive Features & Love Games Suite */}
-        <section className="max-w-4xl mx-auto px-4 py-2">
+        <section className="max-w-4xl mx-auto px-2 sm:px-4 py-2">
           {/* Game Tabs Navigation */}
-          <div className="flex items-center justify-start sm:justify-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    soundFx.playPop(540, 0.05);
-                  }}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all shadow-xs ${
-                    isActive
-                      ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-400/25 scale-102'
-                      : 'bg-white/80 hover:bg-white text-slate-700 hover:text-rose-600 border border-rose-100'
-                  }`}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                  {tab.badge && (
-                    <span
-                      className={`text-[9px] uppercase px-1.5 py-0.2 rounded-md font-extrabold ${
-                        isActive
-                          ? 'bg-white/25 text-white'
-                          : tab.badge === 'Live'
-                          ? 'bg-emerald-100 text-emerald-700 animate-pulse'
-                          : 'bg-pink-100 text-pink-600'
-                      }`}
-                    >
-                      {tab.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="relative flex items-center">
+            {/* Scroll Left Button */}
+            <button
+              type="button"
+              onClick={() => scrollTabs('left')}
+              className="hidden md:flex absolute -left-3.5 z-20 items-center justify-center w-8 h-8 rounded-full bg-white/95 shadow-md border border-rose-100 text-rose-500 hover:bg-rose-50 hover:text-rose-600 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              title="Scroll left"
+              aria-label="Scroll left"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {/* Scrollable Tabs List */}
+            <div
+              ref={tabsRef}
+              className="flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none scroll-smooth px-1.5 py-1.5 w-full justify-start select-none"
+            >
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={(e) => {
+                      setActiveTab(tab.id);
+                      soundFx.playPop(540, 0.05);
+                      e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                    }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all shadow-xs shrink-0 cursor-pointer ${
+                      isActive
+                        ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-400/25 scale-102'
+                        : 'bg-white/80 hover:bg-white text-slate-700 hover:text-rose-600 border border-rose-100 hover:border-rose-200'
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                    {tab.badge && (
+                      <span
+                        className={`text-[9px] uppercase px-1.5 py-0.5 rounded-md font-extrabold ${
+                          isActive
+                            ? 'bg-white/25 text-white'
+                            : tab.badge === 'Live'
+                            ? 'bg-emerald-100 text-emerald-700 animate-pulse'
+                            : 'bg-pink-100 text-pink-600'
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Scroll Right Button */}
+            <button
+              type="button"
+              onClick={() => scrollTabs('right')}
+              className="hidden md:flex absolute -right-3.5 z-20 items-center justify-center w-8 h-8 rounded-full bg-white/95 shadow-md border border-rose-100 text-rose-500 hover:bg-rose-50 hover:text-rose-600 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              title="Scroll right"
+              aria-label="Scroll right"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Active Tab View */}

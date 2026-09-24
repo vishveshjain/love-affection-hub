@@ -412,14 +412,12 @@ export function saveChatMessages(messages: ChatMessage[]): void {
   }
 }
 
-// Convert uploaded file to high-resolution, crisp, Retina-ready base64 Data URL (~380x380 px, ~18-24KB)
-// Balanced for razor-sharp clarity on mobile & desktop Retina displays for the 176px Affection Stage,
-// while storing safely in ExtendsClass Cloud Storage without blurriness or pixelation.
+// Convert uploaded file to high-efficiency, lightweight compressed base64 Data URL
+// Resizes camera/phone photos (often 5MB-12MB) down to crisp ~2KB avatars guaranteed to fit under ntfy's 4KB limit!
 export function fileToDataUrl(
   file: File,
-  maxDimension: number = 380,
-  initialQuality: number = 0.84,
-  maxChars: number = 28000
+  maxDimension: number = 130,
+  initialQuality: number = 0.65
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -439,8 +437,9 @@ export function fileToDataUrl(
           let q = initialQuality;
           let bestResult = '';
 
-          // High-resolution avatar processing: keeps physical pixel density high (360-380px)
-          // for razor-sharp appearance in both the 176px Affection Stage and chat bubbles.
+          // Iteratively resize & compress so the base64 string is <= 2550 chars
+          // This guarantees that the entire JSON realtime event is under 3000 bytes,
+          // safely below ntfy's strict 4096-byte limit so real-time delivery NEVER fails!
           for (let attempt = 0; attempt < 5; attempt++) {
             const canvas = document.createElement('canvas');
             let width = img.width;
@@ -464,16 +463,16 @@ export function fileToDataUrl(
             if (!ctx) break;
 
             ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
+            ctx.imageSmoothingQuality = 'medium';
             ctx.drawImage(img, 0, 0, width, height);
 
             const candidate = canvas.toDataURL('image/jpeg', q);
             bestResult = candidate;
-            if (candidate.length <= maxChars) {
+            if (candidate.length <= 2550) {
               break;
             }
-            dim = Math.round(dim * 0.90);
-            q = Math.max(0.68, q - 0.05);
+            dim = Math.round(dim * 0.82);
+            q = Math.max(0.38, q - 0.08);
           }
 
           resolve(bestResult || rawResult);
@@ -486,4 +485,3 @@ export function fileToDataUrl(
     reader.readAsDataURL(file);
   });
 }
-

@@ -208,8 +208,6 @@ export const AffectionStage: React.FC = () => {
                 src={profile.boyfriendPhoto}
                 alt={profile.boyfriendName}
                 className="w-full h-full object-cover"
-                loading="eager"
-                decoding="async"
               />
 
               {/* Camera hover badge if current user is boyfriend */}
@@ -420,8 +418,6 @@ export const AffectionStage: React.FC = () => {
                 src={profile.girlfriendPhoto}
                 alt={profile.girlfriendName}
                 className="w-full h-full object-cover"
-                loading="eager"
-                decoding="async"
               />
 
               {/* Camera hover badge if current user is girlfriend */}

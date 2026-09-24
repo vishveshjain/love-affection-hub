@@ -44,7 +44,7 @@ interface CoupleContextType {
   dismissAction: () => void;
   setShowOnboarding: (show: boolean) => void;
   updateCoupons: (coupons: ScratchCoupon[]) => void;
-  updateProfilePhoto: (role: UserRole, photoDataUrl: string) => Promise<void> | void;
+  updateProfilePhoto: (role: UserRole, photoDataUrl: string) => void;
   broadcastMoodChange: (role: 'boyfriend' | 'girlfriend', mood: string) => void;
   broadcastCouponChange: (coupons: ScratchCoupon[]) => void;
   resetAllData: () => void;
@@ -132,7 +132,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
   };
 
-  const updateProfilePhoto = async (role: UserRole, photoDataUrl: string) => {
+  const updateProfilePhoto = (role: UserRole, photoDataUrl: string) => {
     const isBf = role === 'boyfriend';
     setProfile((prev) => ({
       ...prev,
@@ -141,10 +141,9 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     saveCloudData({
       [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
     });
-    // Immediately persist high-resolution photo to cloud store
-    await pushToCloudNow();
+    // Immediately push to cloud so partner can load it from cloud
+    pushToCloudNow();
 
-    // Broadcast lightweight real-time notification (<150 bytes, guaranteed to pass ntfy limit)
     realtimeHub.publish({
       type: 'PHOTO_UPDATE',
       clientId: getClientId(),
@@ -152,6 +151,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       senderName: currentUserName,
       data: {
         role,
+        photo: photoDataUrl.length <= 2600 ? photoDataUrl : undefined,
         hasCloudPhoto: true,
       },
       timestamp: Date.now(),
@@ -402,9 +402,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
       } else if (payload.type === 'MEMORY_UPDATE') {
-        if (payload.data?.hasCloudUpdate) {
-          fetchCloudData();
-        } else if (Array.isArray(payload.data?.memories)) {
+        if (Array.isArray(payload.data?.memories)) {
           saveMemoriesToLocal(payload.data.memories);
           saveCloudData({ memories: payload.data.memories });
           if (typeof window !== 'undefined') {
@@ -413,24 +411,22 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       } else if (payload.type === 'PHOTO_UPDATE') {
         if (payload.data?.role) {
-          const { role, photo } = payload.data;
+          const { role, photo, hasCloudPhoto } = payload.data;
           if (isCustomPhoto(photo)) {
             setProfile((prev) => ({
               ...prev,
               [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photo,
             }));
+            soundFx.playCelebration();
+            confetti({
+              particleCount: 45,
+              spread: 60,
+              origin: { y: 0.5 },
+            });
           }
-          soundFx.playCelebration();
-          confetti({
-            particleCount: 45,
-            spread: 60,
-            origin: { y: 0.5 },
-          });
-          // Immediately fetch the high-resolution photo from the cloud bin!
-          fetchCloudData();
-          setTimeout(() => {
+          if (hasCloudPhoto || !photo) {
             fetchCloudData();
-          }, 1500);
+          }
         }
       }
     });

@@ -4,7 +4,7 @@ import { MemoryItem } from '../../types';
 import { fileToDataUrl } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
-import { saveCloudData, onCloudDataLoaded, loadMemoriesFromLocal, saveMemoriesToLocal, pushToCloudNow, fetchCloudData } from '../../utils/cloudStore';
+import { saveCloudData, onCloudDataLoaded, loadMemoriesFromLocal, saveMemoriesToLocal } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
 import { Camera, Plus, Trash2, Heart, Calendar } from 'lucide-react';
 
@@ -61,13 +61,9 @@ export const MemoryWall: React.FC = () => {
     });
 
     const unsubRealtime = realtimeHub.subscribe((payload) => {
-      if (payload.type === 'MEMORY_UPDATE') {
-        if (payload.data?.hasCloudUpdate) {
-          fetchCloudData();
-        } else if (Array.isArray(payload.data?.memories)) {
-          setMemories(payload.data.memories);
-          saveMemoriesToLocal(payload.data.memories);
-        }
+      if (payload.type === 'MEMORY_UPDATE' && Array.isArray(payload.data?.memories)) {
+        setMemories(payload.data.memories);
+        saveMemoriesToLocal(payload.data.memories);
       }
     });
 
@@ -104,23 +100,19 @@ export const MemoryWall: React.FC = () => {
 
     const updated = [newMem, ...memories];
     setMemories(updated);
-    saveMemoriesToLocal(updated);
-    saveCloudData({ memories: updated });
     setNewTitle('');
     setNewDate('');
     setNewDesc('');
     setNewPhoto(undefined);
     setShowAddModal(false);
 
-    pushToCloudNow().then(() => {
-      realtimeHub.publish({
-        type: 'MEMORY_UPDATE',
-        clientId: getClientId(),
-        senderRole: profile.currentUserRole,
-        senderName: currentUserName,
-        data: { hasCloudUpdate: true },
-        timestamp: Date.now(),
-      });
+    realtimeHub.publish({
+      type: 'MEMORY_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { memories: updated },
+      timestamp: Date.now(),
     });
 
     soundFx.playCelebration();
@@ -134,19 +126,15 @@ export const MemoryWall: React.FC = () => {
   const handleDelete = (id: string) => {
     const updated = memories.filter((m) => m.id !== id);
     setMemories(updated);
-    saveMemoriesToLocal(updated);
-    saveCloudData({ memories: updated });
     soundFx.playPop(420, 0.05);
 
-    pushToCloudNow().then(() => {
-      realtimeHub.publish({
-        type: 'MEMORY_UPDATE',
-        clientId: getClientId(),
-        senderRole: profile.currentUserRole,
-        senderName: currentUserName,
-        data: { hasCloudUpdate: true },
-        timestamp: Date.now(),
-      });
+    realtimeHub.publish({
+      type: 'MEMORY_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: { memories: updated },
+      timestamp: Date.now(),
     });
   };
 
