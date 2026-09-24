@@ -24,7 +24,17 @@ import { soundFx } from '../utils/audio';
 
 import { getRandomWhisper } from '../utils/whispers';
 import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
-import { saveCloudData, startAutoCloudSync, onCloudDataLoaded, saveMemoriesToLocal, fetchCloudData, pushToCloudNow } from '../utils/cloudStore';
+import {
+  saveCloudData,
+  startAutoCloudSync,
+  onCloudDataLoaded,
+  saveMemoriesToLocal,
+  fetchCloudData,
+  pushToCloudNow,
+  savePhotoToCloud,
+  fetchPhotosFromCloud,
+  onPhotosLoaded,
+} from '../utils/cloudStore';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -114,11 +124,17 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (updates.boyfriendPhoto) {
         if (isCustomPhoto(updates.boyfriendPhoto) || !isCustomPhoto(prev.boyfriendPhoto)) {
           next.boyfriendPhoto = updates.boyfriendPhoto;
+          if (isCustomPhoto(updates.boyfriendPhoto)) {
+            savePhotoToCloud('boyfriend', updates.boyfriendPhoto);
+          }
         }
       }
       if (updates.girlfriendPhoto) {
         if (isCustomPhoto(updates.girlfriendPhoto) || !isCustomPhoto(prev.girlfriendPhoto)) {
           next.girlfriendPhoto = updates.girlfriendPhoto;
+          if (isCustomPhoto(updates.girlfriendPhoto)) {
+            savePhotoToCloud('girlfriend', updates.girlfriendPhoto);
+          }
         }
       }
 
@@ -138,12 +154,16 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       ...prev,
       [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
     }));
-    saveCloudData({
-      [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
-    });
-    // Immediately push to cloud so partner can load it from cloud
-    pushToCloudNow();
 
+    // Save to local profile
+    const currentProf = loadProfile();
+    currentProf[isBf ? 'boyfriendPhoto' : 'girlfriendPhoto'] = photoDataUrl;
+    saveProfile(currentProf);
+
+    // Save directly to dedicated HD cloud photo bin
+    savePhotoToCloud(role === 'boyfriend' ? 'boyfriend' : 'girlfriend', photoDataUrl);
+
+    // Publish lightweight real-time notification (<200 bytes, instant delivery over ntfy!)
     realtimeHub.publish({
       type: 'PHOTO_UPDATE',
       clientId: getClientId(),
@@ -151,7 +171,6 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       senderName: currentUserName,
       data: {
         role,
-        photo: photoDataUrl.length <= 2600 ? photoDataUrl : undefined,
         hasCloudPhoto: true,
       },
       timestamp: Date.now(),
@@ -348,11 +367,14 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (cloudData.stats) {
         setStats(cloudData.stats);
       }
-      if (isCustomPhoto(cloudData.boyfriendPhoto)) {
-        setProfile((prev) => (prev.boyfriendPhoto === cloudData.boyfriendPhoto ? prev : { ...prev, boyfriendPhoto: cloudData.boyfriendPhoto! }));
+    });
+
+    const unsubPhotos = onPhotosLoaded((photos) => {
+      if (isCustomPhoto(photos.boyfriendPhoto)) {
+        setProfile((prev) => (prev.boyfriendPhoto === photos.boyfriendPhoto ? prev : { ...prev, boyfriendPhoto: photos.boyfriendPhoto! }));
       }
-      if (isCustomPhoto(cloudData.girlfriendPhoto)) {
-        setProfile((prev) => (prev.girlfriendPhoto === cloudData.girlfriendPhoto ? prev : { ...prev, girlfriendPhoto: cloudData.girlfriendPhoto! }));
+      if (isCustomPhoto(photos.girlfriendPhoto)) {
+        setProfile((prev) => (prev.girlfriendPhoto === photos.girlfriendPhoto ? prev : { ...prev, girlfriendPhoto: photos.girlfriendPhoto! }));
       }
     });
 
@@ -411,7 +433,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       } else if (payload.type === 'PHOTO_UPDATE') {
         if (payload.data?.role) {
-          const { role, photo, hasCloudPhoto } = payload.data;
+          const { role, photo } = payload.data;
           if (isCustomPhoto(photo)) {
             setProfile((prev) => ({
               ...prev,
@@ -424,9 +446,24 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               origin: { y: 0.5 },
             });
           }
-          if (hasCloudPhoto || !photo) {
-            fetchCloudData();
-          }
+          // Fetch the crystal-clear HD photo immediately from dedicated photo cloud bin
+          fetchPhotosFromCloud().then((cloudPhotos) => {
+            if (cloudPhotos) {
+              const freshPhoto = role === 'boyfriend' ? cloudPhotos.boyfriendPhoto : cloudPhotos.girlfriendPhoto;
+              if (isCustomPhoto(freshPhoto)) {
+                setProfile((prev) => ({
+                  ...prev,
+                  [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: freshPhoto,
+                }));
+                soundFx.playCelebration();
+                confetti({
+                  particleCount: 50,
+                  spread: 65,
+                  origin: { y: 0.5 },
+                });
+              }
+            }
+          });
         }
       }
     });
@@ -434,6 +471,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return () => {
       unsubCloudSync();
       unsubCloudData();
+      unsubPhotos();
       unsubPresence();
       unsubEvents();
     };

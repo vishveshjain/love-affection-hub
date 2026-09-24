@@ -38,6 +38,47 @@ export interface CloudCoupleData {
 const CLOUD_BIN_ID = 'fdfbbec';
 const CLOUD_ENDPOINT = `https://extendsclass.com/api/json-storage/bin/${CLOUD_BIN_ID}`;
 
+// Dedicated Photo Storage Bin (100KB capacity dedicated strictly to HD boyfriend and girlfriend photos)
+const PHOTO_BIN_ID = 'abdedac';
+const PHOTO_ENDPOINT = `https://extendsclass.com/api/json-storage/bin/${PHOTO_BIN_ID}`;
+
+export interface CloudPhotos {
+  boyfriendPhoto?: string;
+  girlfriendPhoto?: string;
+}
+
+let inMemoryPhotos: CloudPhotos = {
+  boyfriendPhoto: '',
+  girlfriendPhoto: '',
+};
+
+type PhotoListener = (photos: CloudPhotos) => void;
+const photoListeners: Set<PhotoListener> = new Set();
+
+export function onPhotosLoaded(cb: PhotoListener): () => void {
+  photoListeners.add(cb);
+  if (isCustomPhoto(inMemoryPhotos.boyfriendPhoto) || isCustomPhoto(inMemoryPhotos.girlfriendPhoto)) {
+    try {
+      cb(inMemoryPhotos);
+    } catch (e) {
+      console.warn('Listener error in onPhotosLoaded:', e);
+    }
+  }
+  return () => {
+    photoListeners.delete(cb);
+  };
+}
+
+function notifyPhotoListeners(photos: CloudPhotos) {
+  photoListeners.forEach((cb) => {
+    try {
+      cb(photos);
+    } catch (e) {
+      console.warn('Photo listener error:', e);
+    }
+  });
+}
+
 let inMemoryCloudData: CloudCoupleData | null = null;
 let saveDebounceTimer: any = null;
 let isSaving = false;
@@ -178,45 +219,8 @@ export async function fetchCloudData(): Promise<CloudCoupleData | null> {
         data.stats = mergedStats;
       }
 
-      // Sync photos across devices if updated in cloud
-      try {
-        const localProf = loadProfile();
-        let profChanged = false;
-        let needsCloudPush = false;
-
-        // Boyfriend photo:
-        if (isCustomPhoto(data.boyfriendPhoto)) {
-          if (data.boyfriendPhoto !== localProf.boyfriendPhoto) {
-            localProf.boyfriendPhoto = data.boyfriendPhoto!;
-            profChanged = true;
-          }
-        } else if (isCustomPhoto(localProf.boyfriendPhoto)) {
-          data.boyfriendPhoto = localProf.boyfriendPhoto;
-          needsCloudPush = true;
-        }
-
-        // Girlfriend photo:
-        if (isCustomPhoto(data.girlfriendPhoto)) {
-          if (data.girlfriendPhoto !== localProf.girlfriendPhoto) {
-            localProf.girlfriendPhoto = data.girlfriendPhoto!;
-            profChanged = true;
-          }
-        } else if (isCustomPhoto(localProf.girlfriendPhoto)) {
-          data.girlfriendPhoto = localProf.girlfriendPhoto;
-          needsCloudPush = true;
-        }
-
-        if (profChanged) {
-          saveProfile(localProf);
-        }
-
-        if (needsCloudPush) {
-          inMemoryCloudData = data;
-          pushToCloudNow();
-        }
-      } catch (err) {
-        console.warn('Error syncing profile photos from cloud:', err);
-      }
+      // Fetch and sync dedicated HD cloud photos
+      fetchPhotosFromCloud();
 
       inMemoryCloudData = data;
       notifyListeners(data);
@@ -230,6 +234,10 @@ export async function fetchCloudData(): Promise<CloudCoupleData | null> {
 
 function sanitizeForCloud(data: CloudCoupleData): CloudCoupleData {
   const sanitized: CloudCoupleData = { ...data };
+  // Ensure profile photos are never stored in the main bin to prevent size ballooning
+  // Dedicated HD photo bin abdedac handles photos cleanly and without interfering with chat/dreams.
+  delete sanitized.boyfriendPhoto;
+  delete sanitized.girlfriendPhoto;
   if (Array.isArray(sanitized.chat)) {
     sanitized.chat = sanitized.chat.slice(-60).map((m) => {
       if (m.senderPhoto && m.senderPhoto.length > 300) {
@@ -328,11 +336,12 @@ export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' |
 
   inMemoryCloudData = updated;
 
-  // If this update was explicitly for a profile photo, push immediately to cloud
-  if (isCustomPhoto(partial.boyfriendPhoto) || isCustomPhoto(partial.girlfriendPhoto)) {
-    clearTimeout(saveDebounceTimer);
-    pushToCloudNow();
-    return;
+  // If this update was explicitly for a profile photo, push immediately to dedicated photo cloud bin
+  if (isCustomPhoto(partial.boyfriendPhoto)) {
+    savePhotoToCloud('boyfriend', partial.boyfriendPhoto!);
+  }
+  if (isCustomPhoto(partial.girlfriendPhoto)) {
+    savePhotoToCloud('girlfriend', partial.girlfriendPhoto!);
   }
 
   // Debounced push to cloud to prevent excessive HTTP traffic
@@ -350,16 +359,108 @@ export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' |
   }, 250);
 }
 
+export async function pushPhotosToCloudNow(): Promise<boolean> {
+  try {
+    const payload = {
+      boyfriendPhoto: inMemoryPhotos.boyfriendPhoto || '',
+      girlfriendPhoto: inMemoryPhotos.girlfriendPhoto || '',
+    };
+    const res = await fetch(PHOTO_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Failed pushing photos to dedicated cloud bin:', err);
+    return false;
+  }
+}
+
+export async function savePhotoToCloud(
+  role: 'boyfriend' | 'girlfriend',
+  photoDataUrl: string
+): Promise<boolean> {
+  try {
+    if (role === 'boyfriend') {
+      inMemoryPhotos.boyfriendPhoto = photoDataUrl;
+    } else {
+      inMemoryPhotos.girlfriendPhoto = photoDataUrl;
+    }
+    notifyPhotoListeners(inMemoryPhotos);
+    return await pushPhotosToCloudNow();
+  } catch (err) {
+    console.warn('Failed to save photo to cloud bin:', err);
+    return false;
+  }
+}
+
+export async function fetchPhotosFromCloud(): Promise<CloudPhotos | null> {
+  try {
+    const res = await fetch(`${PHOTO_ENDPOINT}?t=${Date.now()}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data: CloudPhotos = await res.json();
+    if (data && typeof data === 'object') {
+      const localProf = loadProfile();
+      let changed = false;
+      let needsBackfill = false;
+
+      // Sync boyfriend photo
+      if (isCustomPhoto(data.boyfriendPhoto)) {
+        inMemoryPhotos.boyfriendPhoto = data.boyfriendPhoto;
+        if (data.boyfriendPhoto !== localProf.boyfriendPhoto) {
+          localProf.boyfriendPhoto = data.boyfriendPhoto!;
+          changed = true;
+        }
+      } else if (isCustomPhoto(localProf.boyfriendPhoto)) {
+        inMemoryPhotos.boyfriendPhoto = localProf.boyfriendPhoto;
+        needsBackfill = true;
+      }
+
+      // Sync girlfriend photo
+      if (isCustomPhoto(data.girlfriendPhoto)) {
+        inMemoryPhotos.girlfriendPhoto = data.girlfriendPhoto;
+        if (data.girlfriendPhoto !== localProf.girlfriendPhoto) {
+          localProf.girlfriendPhoto = data.girlfriendPhoto!;
+          changed = true;
+        }
+      } else if (isCustomPhoto(localProf.girlfriendPhoto)) {
+        inMemoryPhotos.girlfriendPhoto = localProf.girlfriendPhoto;
+        needsBackfill = true;
+      }
+
+      if (changed) {
+        saveProfile(localProf);
+      }
+
+      notifyPhotoListeners(inMemoryPhotos);
+
+      if (needsBackfill) {
+        pushPhotosToCloudNow();
+      }
+
+      return inMemoryPhotos;
+    }
+  } catch (err) {
+    console.warn('Error fetching photos from dedicated cloud bin:', err);
+  }
+  return null;
+}
+
 // Start automatic periodic background sync every 25 seconds
 export function startAutoCloudSync(intervalMs: number = 25000): () => void {
   if (typeof window === 'undefined') return () => {};
   
   // Initial fetch immediately
   fetchCloudData();
+  fetchPhotosFromCloud();
 
   clearInterval(syncIntervalTimer);
   syncIntervalTimer = setInterval(() => {
     fetchCloudData();
+    fetchPhotosFromCloud();
   }, intervalMs);
 
   return () => {

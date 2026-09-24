@@ -412,12 +412,13 @@ export function saveChatMessages(messages: ChatMessage[]): void {
   }
 }
 
-// Convert uploaded file to high-efficiency, lightweight compressed base64 Data URL
-// Resizes camera/phone photos (often 5MB-12MB) down to crisp ~2KB avatars guaranteed to fit under ntfy's 4KB limit!
+// Convert uploaded file to high-definition, crystal-clear compressed base64 Data URL
+// Resizes camera/phone photos down to razor-sharp 360px retina quality (~25-35KB),
+// perfectly calibrated for dedicated cloud storage (up to 42,000 chars base64 per photo).
 export function fileToDataUrl(
   file: File,
-  maxDimension: number = 130,
-  initialQuality: number = 0.65
+  maxDimension: number = 360,
+  initialQuality: number = 0.84
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -437,9 +438,9 @@ export function fileToDataUrl(
           let q = initialQuality;
           let bestResult = '';
 
-          // Iteratively resize & compress so the base64 string is <= 2550 chars
-          // This guarantees that the entire JSON realtime event is under 3000 bytes,
-          // safely below ntfy's strict 4096-byte limit so real-time delivery NEVER fails!
+          // Target max base64 length: 42,000 chars (~31.5KB binary).
+          // Dedicated photo bin abdedac has 100KB limit, accommodating two HD photos (~84KB max total).
+          // 360px with high smoothing quality gives crystal clear, razor sharp rendering on 2x/3x retina mobile screens.
           for (let attempt = 0; attempt < 5; attempt++) {
             const canvas = document.createElement('canvas');
             let width = img.width;
@@ -463,16 +464,21 @@ export function fileToDataUrl(
             if (!ctx) break;
 
             ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'medium';
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, width, height);
 
             const candidate = canvas.toDataURL('image/jpeg', q);
             bestResult = candidate;
-            if (candidate.length <= 2550) {
+            if (candidate.length <= 42000) {
               break;
             }
-            dim = Math.round(dim * 0.82);
-            q = Math.max(0.38, q - 0.08);
+            // If slightly too large, reduce quality gradually first before reducing resolution
+            if (q > 0.68) {
+              q = Math.max(0.68, q - 0.08);
+            } else {
+              dim = Math.round(dim * 0.88);
+              q = 0.78;
+            }
           }
 
           resolve(bestResult || rawResult);
