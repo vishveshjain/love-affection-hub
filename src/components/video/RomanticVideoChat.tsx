@@ -27,6 +27,7 @@ import {
   Columns,
   Flame,
   Music,
+  ChevronLeft,
 } from 'lucide-react';
 
 const ROMANTIC_EMOJIS = [
@@ -42,7 +43,11 @@ const ROMANTIC_EMOJIS = [
   { emoji: '💌', label: 'Love Letter', soundFreq: 580 },
 ];
 
-export const RomanticVideoChat: React.FC = () => {
+interface RomanticVideoChatProps {
+  onClose?: () => void;
+}
+
+export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose }) => {
   const { profile, currentUserName, partnerName, partnerPhoto, partnerRole, partnerOnline } = useCouple();
 
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'incoming' | 'connected'>('idle');
@@ -150,6 +155,20 @@ export const RomanticVideoChat: React.FC = () => {
     return () => clearInterval(timer);
   }, [callStatus]);
 
+  // If partner ends the call while connected or calling, auto-return smoothly to chat
+  const prevStatusRef = useRef(callStatus);
+  useEffect(() => {
+    if ((prevStatusRef.current === 'connected' || prevStatusRef.current === 'calling') && callStatus === 'idle') {
+      if (onClose) {
+        const t = setTimeout(() => {
+          onClose();
+        }, 600);
+        return () => clearTimeout(t);
+      }
+    }
+    prevStatusRef.current = callStatus;
+  }, [callStatus, onClose]);
+
   const formatDuration = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -168,6 +187,11 @@ export const RomanticVideoChat: React.FC = () => {
 
   const handleEndCall = () => {
     videoCallService.endCall(true);
+    if (onClose) {
+      setTimeout(() => {
+        onClose();
+      }, 400);
+    }
   };
 
   const handleToggleMute = () => {
@@ -242,6 +266,17 @@ export const RomanticVideoChat: React.FC = () => {
       {/* ================= TOP HEADER BAR ================= */}
       <div className="relative z-20 flex items-center justify-between p-4 md:px-6 bg-black/40 backdrop-blur-md border-b border-white/10 text-white">
         <div className="flex items-center gap-3">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-white/10 hover:bg-white/20 text-rose-200 hover:text-white transition active:scale-95 border border-white/15 flex items-center gap-1 text-xs font-bold shrink-0"
+              title="Return to Love Hub & Chat"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Back</span>
+            </button>
+          )}
           <div className="flex items-center gap-2">
             <span className="text-2xl">{currentThemeConfig.icon}</span>
             <div>
@@ -447,14 +482,27 @@ export const RomanticVideoChat: React.FC = () => {
               Talk directly with {partnerName} within an intimate starry paradise with soft ambient music, flattering filters, and flying kisses.
             </p>
 
-            <button
-              type="button"
-              onClick={handleStartCall}
-              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 hover:to-pink-600 text-white font-extrabold text-sm md:text-base shadow-xl shadow-rose-500/30 flex items-center justify-center gap-2 transition active:scale-95 ring-4 ring-rose-400/25"
-            >
-              <PhoneCall className="w-5 h-5 fill-white" />
-              <span>Call My {partnerName} Now</span>
-            </button>
+            <div className="w-full space-y-3">
+              <button
+                type="button"
+                onClick={handleStartCall}
+                className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600 hover:from-rose-600 hover:to-pink-600 text-white font-extrabold text-sm md:text-base shadow-xl shadow-rose-500/30 flex items-center justify-center gap-2 transition active:scale-95 ring-4 ring-rose-400/25 cursor-pointer"
+              >
+                <PhoneCall className="w-5 h-5 fill-white" />
+                <span>Call My {partnerName} Now</span>
+              </button>
+
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-3 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-rose-200 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 border border-white/10 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Return to Love Hub & Chat</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           /* ACTIVE / CONNECTED VIDEO STAGE */

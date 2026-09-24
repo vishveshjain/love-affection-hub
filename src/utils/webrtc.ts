@@ -134,7 +134,10 @@ export interface VideoSignalData {
     | 'call-end'
     | 'webrtc-offer'
     | 'webrtc-answer'
+    | 'webrtc-offer-chunk'
+    | 'webrtc-answer-chunk'
     | 'webrtc-ice'
+    | 'webrtc-ice-batch'
     | 'romantic-reaction'
     | 'touch-heart'
     | 'theme-sync';
@@ -142,7 +145,12 @@ export interface VideoSignalData {
   callerName?: string;
   answererRole?: UserRole;
   sdp?: RTCSessionDescriptionInit;
+  transmissionId?: string;
+  chunkIndex?: number;
+  totalChunks?: number;
+  chunkData?: string;
   candidate?: RTCIceCandidateInit;
+  candidates?: RTCIceCandidateInit[];
   emoji?: string;
   reactionId?: string;
   x?: number;
@@ -187,6 +195,10 @@ class RomanticVideoCallService {
   private remoteStream: MediaStream | null = null;
   private queuedCandidates: RTCIceCandidateInit[] = [];
   private unsubRealtime: (() => void) | null = null;
+  private sdpChunkBuffers = new Map<
+    string,
+    { chunks: (string | undefined)[]; total: number; timer: any; senderRole?: UserRole }
+  >();
 
   public status: 'idle' | 'calling' | 'incoming' | 'connected' = 'idle';
   public callerRole?: UserRole;
@@ -262,17 +274,17 @@ class RomanticVideoCallService {
     });
   }
 
-  // Request user camera and microphone
+  // Request user camera and microphone (tuned for mobile performance & rapid connection)
   public async getLocalMedia(videoWanted: boolean = true, audioWanted: boolean = true): Promise<MediaStream | null> {
     if (this.localStream) return this.localStream;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoWanted
           ? {
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 },
               facingMode: 'user',
-              frameRate: { ideal: 30 },
+              width: { ideal: 640, max: 1280 },
+              height: { ideal: 480, max: 720 },
+              frameRate: { ideal: 30, max: 30 },
             }
           : false,
         audio: audioWanted
@@ -287,10 +299,10 @@ class RomanticVideoCallService {
       this.notify();
       return stream;
     } catch (err) {
-      console.warn('Could not acquire high-res camera/mic, trying basic fallback:', err);
+      console.warn('Could not acquire preferred camera/mic, trying basic mobile fallback:', err);
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
-          video: videoWanted ? true : false,
+          video: videoWanted ? { facingMode: 'user' } : false,
           audio: audioWanted ? true : false,
         });
         this.localStream = fallbackStream;
@@ -341,9 +353,7 @@ class RomanticVideoCallService {
     this.status = 'connected';
     this.notify();
 
-    await this.getLocalMedia(true, true);
-
-    // Notify caller we accepted
+    // 1. Send accept signal IMMEDIATELY to prevent caller hanging in calling state
     await this.sendSignal(
       {
         signalType: 'call-accept',
@@ -353,7 +363,8 @@ class RomanticVideoCallService {
       myName
     );
 
-    // Caller will receive 'call-accept' and initiate the WebRTC offer
+    // 2. Acquire camera in parallel so answerer is ready for offer
+    await this.getLocalMedia(true, true);
   }
 
   // Decline incoming call
@@ -396,7 +407,12 @@ class RomanticVideoCallService {
     this.notify();
 
     if (notifyRemote) {
+      // Send call-end signal to partner reliably
       await this.sendSignal({ signalType: 'call-end' });
+      // Repeat after 150ms to ensure delivery over cellular/mobile networks
+      setTimeout(() => {
+        this.sendSignal({ signalType: 'call-end' }).catch(() => {});
+      }, 150);
     }
   }
 
@@ -491,6 +507,7 @@ class RomanticVideoCallService {
     };
 
     // Trickle ICE candidates with light debounce to avoid 429
+    // Trickle ICE candidates with batching to avoid flooding HTTP requests
     let iceTimer: any = null;
     let pendingIce: RTCIceCandidateInit[] = [];
 
@@ -502,14 +519,12 @@ class RomanticVideoCallService {
           if (pendingIce.length > 0) {
             const batch = [...pendingIce];
             pendingIce = [];
-            batch.forEach((cand) => {
-              this.sendSignal({
-                signalType: 'webrtc-ice',
-                candidate: cand,
-              }, myRole);
-            });
+            this.sendSignal({
+              signalType: 'webrtc-ice-batch',
+              candidates: batch,
+            }, myRole);
           }
-        }, 300);
+        }, 200);
       }
     };
 
@@ -532,6 +547,80 @@ class RomanticVideoCallService {
     return pc;
   }
 
+  // Transmit large SDP payloads across ntfy safely in sub-1KB chunks
+  private async sendSdpInChunks(
+    type: 'webrtc-offer' | 'webrtc-answer',
+    sdp: RTCSessionDescriptionInit,
+    senderRole?: UserRole
+  ) {
+    const rawSdp = sdp.sdp || '';
+    const serialized = JSON.stringify({ type: sdp.type, sdp: rawSdp });
+    const CHUNK_SIZE = 900;
+    const totalChunks = Math.ceil(serialized.length / CHUNK_SIZE);
+    const transmissionId = `sdp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const chunkSignalType = type === 'webrtc-offer' ? 'webrtc-offer-chunk' : 'webrtc-answer-chunk';
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkData = serialized.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      await this.sendSignal(
+        {
+          signalType: chunkSignalType,
+          transmissionId,
+          chunkIndex: i,
+          totalChunks,
+          chunkData,
+        },
+        senderRole
+      );
+      if (totalChunks > 1) {
+        await new Promise((r) => setTimeout(r, 40));
+      }
+    }
+  }
+
+  // Reassemble received SDP chunks and process when complete
+  private handleSdpChunk(
+    isOffer: boolean,
+    transmissionId: string,
+    chunkIndex: number,
+    totalChunks: number,
+    chunkData: string,
+    senderRole?: UserRole
+  ) {
+    let entry = this.sdpChunkBuffers.get(transmissionId);
+    if (!entry) {
+      entry = {
+        chunks: new Array(totalChunks),
+        total: totalChunks,
+        timer: setTimeout(() => {
+          this.sdpChunkBuffers.delete(transmissionId);
+        }, 15000),
+        senderRole,
+      };
+      this.sdpChunkBuffers.set(transmissionId, entry);
+    }
+
+    entry.chunks[chunkIndex] = chunkData;
+
+    // Check if all chunks have arrived
+    const receivedCount = entry.chunks.filter((c) => c !== undefined).length;
+    if (receivedCount === entry.total) {
+      clearTimeout(entry.timer);
+      this.sdpChunkBuffers.delete(transmissionId);
+      const fullSdpString = entry.chunks.join('');
+      try {
+        const sdp = JSON.parse(fullSdpString) as RTCSessionDescriptionInit;
+        if (isOffer) {
+          this.handleWebRTCOffer(sdp, entry.senderRole || senderRole);
+        } else {
+          this.handleWebRTCAnswer(sdp);
+        }
+      } catch (err) {
+        console.error('Failed to parse reassembled SDP:', err);
+      }
+    }
+  }
+
   // Create & send WebRTC Offer (Caller)
   private async initiateWebRTCOffer(myRole?: UserRole) {
     if (!this.localStream) {
@@ -546,12 +635,10 @@ class RomanticVideoCallService {
       await pc.setLocalDescription(offer);
 
       // Wait briefly so STUN candidates are embedded directly into SDP offer
-      await this.waitForIceGathering(pc, 1000);
+      await this.waitForIceGathering(pc, 800);
 
-      await this.sendSignal({
-        signalType: 'webrtc-offer',
-        sdp: pc.localDescription || offer,
-      }, myRole);
+      const finalOffer = pc.localDescription || offer;
+      await this.sendSdpInChunks('webrtc-offer', finalOffer, myRole);
     } catch (e) {
       console.error('Failed to create WebRTC offer:', e);
     }
@@ -572,7 +659,7 @@ class RomanticVideoCallService {
       await pc.setLocalDescription(answer);
 
       // Wait briefly so STUN candidates are embedded directly into SDP answer
-      await this.waitForIceGathering(pc, 1000);
+      await this.waitForIceGathering(pc, 800);
 
       // Process any early candidates received before remote description was ready
       while (this.queuedCandidates.length > 0) {
@@ -584,10 +671,8 @@ class RomanticVideoCallService {
         }
       }
 
-      await this.sendSignal({
-        signalType: 'webrtc-answer',
-        sdp: pc.localDescription || answer,
-      }, myRole);
+      const finalAnswer = pc.localDescription || answer;
+      await this.sendSdpInChunks('webrtc-answer', finalAnswer, myRole);
     } catch (e) {
       console.error('Failed to handle WebRTC offer:', e);
     }
@@ -655,6 +740,42 @@ class RomanticVideoCallService {
         this.endCall(false);
         break;
 
+      case 'webrtc-offer-chunk':
+        if (
+          data.transmissionId &&
+          typeof data.chunkIndex === 'number' &&
+          typeof data.totalChunks === 'number' &&
+          data.chunkData
+        ) {
+          this.handleSdpChunk(
+            true,
+            data.transmissionId,
+            data.chunkIndex,
+            data.totalChunks,
+            data.chunkData,
+            senderRole
+          );
+        }
+        break;
+
+      case 'webrtc-answer-chunk':
+        if (
+          data.transmissionId &&
+          typeof data.chunkIndex === 'number' &&
+          typeof data.totalChunks === 'number' &&
+          data.chunkData
+        ) {
+          this.handleSdpChunk(
+            false,
+            data.transmissionId,
+            data.chunkIndex,
+            data.totalChunks,
+            data.chunkData,
+            senderRole
+          );
+        }
+        break;
+
       case 'webrtc-offer':
         if (data.sdp) {
           await this.handleWebRTCOffer(data.sdp, senderRole);
@@ -670,6 +791,12 @@ class RomanticVideoCallService {
       case 'webrtc-ice':
         if (data.candidate) {
           await this.handleIceCandidate(data.candidate);
+        }
+        break;
+
+      case 'webrtc-ice-batch':
+        if (data.candidates && Array.isArray(data.candidates)) {
+          data.candidates.forEach((c) => this.handleIceCandidate(c));
         }
         break;
 

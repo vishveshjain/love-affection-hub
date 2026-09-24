@@ -206,7 +206,7 @@ const MainContent: React.FC = () => {
 
           {/* Active Tab View */}
           <div className="mt-4 transition-all duration-300">
-            {activeTab === 'video' && <RomanticVideoChat />}
+            {activeTab === 'video' && <RomanticVideoChat onClose={() => setActiveTab('chat')} />}
             {activeTab === 'chat' && <LiveCoupleChat onStartVideoCall={() => setActiveTab('video')} />}
             {activeTab === 'dreams' && <DreamJournal />}
             {activeTab === 'notes' && <LoveNotesJourney />}

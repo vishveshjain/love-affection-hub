@@ -175,14 +175,15 @@ export class RealtimeService {
         this.notifyStatus(true);
       };
 
-      this.eventSource.onmessage = (event) => {
+      this.eventSource.onmessage = async (event) => {
         try {
           const parsed = JSON.parse(event.data);
-          if (parsed.event === 'message' && parsed.message) {
-            const payload: RealtimePayload = JSON.parse(parsed.message);
-            if (!payload.id && parsed.id) payload.id = parsed.id;
-            payload.isHistorical = false;
-            this.handleIncoming(payload);
+          if (parsed.event === 'message') {
+            const payload = await this.parseMessageOrAttachment(parsed);
+            if (payload) {
+              payload.isHistorical = false;
+              this.handleIncoming(payload);
+            }
           }
         } catch {
           // Ignore
@@ -208,6 +209,32 @@ export class RealtimeService {
     }
   }
 
+  private async parseMessageOrAttachment(parsed: any): Promise<RealtimePayload | null> {
+    if (parsed.message) {
+      try {
+        const payload: RealtimePayload = JSON.parse(parsed.message);
+        if (!payload.id && parsed.id) payload.id = parsed.id;
+        return payload;
+      } catch {
+        // message might not be direct JSON if ntfy formatted it as attachment notice
+      }
+    }
+    if (parsed.attachment && parsed.attachment.url) {
+      try {
+        const res = await fetch(parsed.attachment.url);
+        if (res.ok) {
+          const text = await res.text();
+          const payload: RealtimePayload = JSON.parse(text);
+          if (!payload.id && parsed.id) payload.id = parsed.id;
+          return payload;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    return null;
+  }
+
   private async fetchRecentHistory(topic: string) {
     try {
       const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=all`);
@@ -218,9 +245,9 @@ export class RealtimeService {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line);
-            if (parsed.event === 'message' && parsed.message) {
-              const payload: RealtimePayload = JSON.parse(parsed.message);
-              if (!payload.id && parsed.id) payload.id = parsed.id;
+            if (parsed.event === 'message') {
+              const payload = await this.parseMessageOrAttachment(parsed);
+              if (!payload) continue;
               
               if (payload.id) this.seenIds.add(payload.id);
 
@@ -258,11 +285,12 @@ export class RealtimeService {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line);
-            if (parsed.event === 'message' && parsed.message) {
-              const payload: RealtimePayload = JSON.parse(parsed.message);
-              if (!payload.id && parsed.id) payload.id = parsed.id;
-              payload.isHistorical = false;
-              this.handleIncoming(payload);
+            if (parsed.event === 'message') {
+              const payload = await this.parseMessageOrAttachment(parsed);
+              if (payload) {
+                payload.isHistorical = false;
+                this.handleIncoming(payload);
+              }
             }
           } catch {
             // Ignore
