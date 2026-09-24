@@ -236,29 +236,43 @@ export const PERMANENT_KEYS = {
   DREAMS_VAULT: 'love_app_permanent_dreams_vault_v1',
   NOTES_VAULT: 'love_app_permanent_notes_vault_v1',
   MILESTONES_VAULT: 'love_app_permanent_milestones_vault_v1',
+  BF_PHOTO_VAULT: 'love_app_permanent_bf_photo_v1',
+  GF_PHOTO_VAULT: 'love_app_permanent_gf_photo_v1',
 };
 
 export function loadProfile(): CoupleProfile {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    let parsed: any = {};
     if (raw) {
-      const parsed = JSON.parse(raw);
-      // Migrate defaults if needed
-      if (!parsed.girlfriendName || parsed.girlfriendName === 'My Angel') {
-        parsed.girlfriendName = 'Laura';
-      }
-      if (!parsed.boyfriendName) {
-        parsed.boyfriendName = 'Vishvesh';
-      }
-      if (
-        !parsed.relationshipStartDate ||
-        parsed.relationshipStartDate === '2024-02-14' ||
-        parsed.relationshipStartDate === '2024-08-25'
-      ) {
-        parsed.relationshipStartDate = '2026-08-25';
-      }
-      return { ...INITIAL_PROFILE, ...parsed };
+      parsed = JSON.parse(raw);
     }
+    // Check permanent photo vaults if custom photo is missing from current profile
+    const bfVault = localStorage.getItem(PERMANENT_KEYS.BF_PHOTO_VAULT);
+    const gfVault = localStorage.getItem(PERMANENT_KEYS.GF_PHOTO_VAULT);
+
+    if (!isCustomPhoto(parsed.boyfriendPhoto) && isCustomPhoto(bfVault)) {
+      parsed.boyfriendPhoto = bfVault;
+    }
+    if (!isCustomPhoto(parsed.girlfriendPhoto) && isCustomPhoto(gfVault)) {
+      parsed.girlfriendPhoto = gfVault;
+    }
+
+    // Migrate defaults if needed
+    if (!parsed.girlfriendName || parsed.girlfriendName === 'My Angel') {
+      parsed.girlfriendName = 'Laura';
+    }
+    if (!parsed.boyfriendName) {
+      parsed.boyfriendName = 'Vishvesh';
+    }
+    if (
+      !parsed.relationshipStartDate ||
+      parsed.relationshipStartDate === '2024-02-14' ||
+      parsed.relationshipStartDate === '2024-08-25'
+    ) {
+      parsed.relationshipStartDate = '2026-08-25';
+    }
+    return { ...INITIAL_PROFILE, ...parsed };
   } catch (e) {
     console.error('Failed to load profile', e);
   }
@@ -268,6 +282,12 @@ export function loadProfile(): CoupleProfile {
 export function saveProfile(profile: CoupleProfile): void {
   try {
     localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    if (isCustomPhoto(profile.boyfriendPhoto)) {
+      localStorage.setItem(PERMANENT_KEYS.BF_PHOTO_VAULT, profile.boyfriendPhoto);
+    }
+    if (isCustomPhoto(profile.girlfriendPhoto)) {
+      localStorage.setItem(PERMANENT_KEYS.GF_PHOTO_VAULT, profile.girlfriendPhoto);
+    }
   } catch (e) {
     console.error('Failed to save profile', e);
   }

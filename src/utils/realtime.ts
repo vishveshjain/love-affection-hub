@@ -36,8 +36,13 @@ const CLIENT_STORAGE_KEY = 'love_app_client_id_v2';
 
 // Primary and fallback high-availability servers that support CORS and worldwide access
 const SERVERS = [
+  'https://ntfy.envs.net',
   'https://ntfy.tedomum.fr',
   'https://ntfy.adminforge.de',
+];
+
+const MEDIA_SERVERS = [
+  'https://ntfy.envs.net',
 ];
 
 let cachedClientId = '';
@@ -338,19 +343,20 @@ export class RealtimeService {
     }
 
     const topic = getTopicName(this.currentRoomKey || getRoomKey());
-    let bodyStr = JSON.stringify(fullPayload);
+    const bodyStr = JSON.stringify(fullPayload);
 
-    // If payload approaches ntfy's strict 4096-byte limit, fallback to lightweight event with cloud trigger
-    if (bodyStr.length > 3800 && fullPayload.type === 'PHOTO_UPDATE' && fullPayload.data?.photo) {
-      const lightweightPayload = {
-        ...fullPayload,
-        data: {
-          ...fullPayload.data,
-          photo: undefined,
-          hasCloudPhoto: true,
-        },
-      };
-      bodyStr = JSON.stringify(lightweightPayload);
+    // If it's a chunk, send ONLY to activeServer to avoid multiplying network traffic and rate limits
+    if (fullPayload.type === 'PHOTO_UPDATE' && fullPayload.data?.chunk) {
+      try {
+        const targetServer = this.activeServer || SERVERS[0];
+        const res = await fetch(`${targetServer}/${topic}`, {
+          method: 'POST',
+          body: bodyStr,
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
     }
 
     // Broadcast to ALL servers simultaneously so that partner receives it on whichever server they are connected to!
@@ -435,27 +441,36 @@ export class RealtimeService {
   public async sendPhoto(role: 'boyfriend' | 'girlfriend', photoDataUrl: string): Promise<void> {
     if (!photoDataUrl || photoDataUrl.length < 50) return;
 
-    // 1. Upload to ntfy.sh media topic for persistent URL access
+    // 1. Upload to persistent media topic with direct file URL
     const room = this.currentRoomKey || getRoomKey();
-    const mediaTopic = `${getTopicName(room)}-media-v1`;
+    const mediaTopic = `${getTopicName(room)}-media-v2`;
     let fileUrl = '';
-    try {
-      const res = await fetch(`https://ntfy.sh/${mediaTopic}`, {
-        method: 'PUT',
-        headers: {
-          Filename: `${role}_avatar.txt`,
-          Title: `${role}_avatar`,
-        },
-        body: photoDataUrl,
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json?.attachment?.url) {
-          fileUrl = json.attachment.url;
+
+    for (const server of MEDIA_SERVERS) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 9000);
+      try {
+        const res = await fetch(`${server}/${mediaTopic}`, {
+          method: 'PUT',
+          headers: {
+            Filename: `${role}_avatar.txt`,
+            Title: `${role}_avatar`,
+          },
+          body: photoDataUrl,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.attachment?.url) {
+            fileUrl = json.attachment.url;
+            break;
+          }
         }
+      } catch (e) {
+        clearTimeout(timeoutId);
+        console.warn(`Media upload fallback on ${server}:`, e);
       }
-    } catch (e) {
-      console.warn('ntfy.sh media upload fallback:', e);
     }
 
     if (fileUrl) {
@@ -471,10 +486,28 @@ export class RealtimeService {
         },
         timestamp: Date.now(),
       });
+      return;
     }
 
-    // 2. Stream chunked photo across active SSE channels for instant sub-second delivery
-    const CHUNK_SIZE = 2200;
+    // 2. Direct embedded photo if payload fits within single message
+    if (photoDataUrl.length <= 3400) {
+      await this.publish({
+        type: 'PHOTO_UPDATE',
+        clientId: getClientId(),
+        senderRole: this.currentRole,
+        senderName: this.currentUserName,
+        data: {
+          role,
+          photo: photoDataUrl,
+          timestamp: Date.now(),
+        },
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // 3. Fallback: chunked delivery with gentle rate limiting
+    const CHUNK_SIZE = 3000;
     const total = Math.ceil(photoDataUrl.length / CHUNK_SIZE);
     const photoId = `photo_${role}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -494,55 +527,70 @@ export class RealtimeService {
         },
         timestamp: Date.now(),
       });
-      // 30ms throttle between chunks to avoid network congestion
-      await new Promise((r) => setTimeout(r, 30));
+      if (index < total - 1) {
+        await new Promise((r) => setTimeout(r, 450));
+      }
     }
   }
 
   public async fetchLatestStoredPhotos(): Promise<{ boyfriendPhoto?: string; girlfriendPhoto?: string }> {
     const room = this.currentRoomKey || getRoomKey();
-    const mediaTopic = `${getTopicName(room)}-media-v1`;
+    const mediaTopic = `${getTopicName(room)}-media-v2`;
     const result: { boyfriendPhoto?: string; girlfriendPhoto?: string } = {};
 
-    try {
-      const res = await fetch(`https://ntfy.sh/${mediaTopic}/json?poll=1`);
-      if (!res.ok) return result;
-      const text = await res.text();
-      const lines = text.trim().split('\n');
+    for (const server of MEDIA_SERVERS) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      try {
+        const res = await fetch(`${server}/${mediaTopic}/json?poll=1`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) continue;
+        const text = await res.text();
+        const lines = text.trim().split('\n');
 
-      // Process in reverse to get the newest uploaded photo for each role
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        try {
-          const parsed = JSON.parse(line);
-          const title = parsed.title || '';
-          const url = parsed.attachment?.url;
-          if (url) {
-            if (title.includes('boyfriend') && !result.boyfriendPhoto) {
-              const fileRes = await fetch(url);
-              if (fileRes.ok) {
-                const photoStr = await fileRes.text();
-                if (photoStr.startsWith('data:image/')) {
-                  result.boyfriendPhoto = photoStr;
+        // Process in reverse to get the newest uploaded photo for each role
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          try {
+            const parsed = JSON.parse(line);
+            const title = parsed.title || '';
+            const url = parsed.attachment?.url;
+            if (url) {
+              if (title.includes('boyfriend') && !result.boyfriendPhoto) {
+                const fileController = new AbortController();
+                const fileTimeout = setTimeout(() => fileController.abort(), 6000);
+                const fileRes = await fetch(url, { signal: fileController.signal });
+                clearTimeout(fileTimeout);
+                if (fileRes.ok) {
+                  const photoStr = await fileRes.text();
+                  if (photoStr.startsWith('data:image/')) {
+                    result.boyfriendPhoto = photoStr;
+                  }
                 }
-              }
-            } else if (title.includes('girlfriend') && !result.girlfriendPhoto) {
-              const fileRes = await fetch(url);
-              if (fileRes.ok) {
-                const photoStr = await fileRes.text();
-                if (photoStr.startsWith('data:image/')) {
-                  result.girlfriendPhoto = photoStr;
+              } else if (title.includes('girlfriend') && !result.girlfriendPhoto) {
+                const fileController = new AbortController();
+                const fileTimeout = setTimeout(() => fileController.abort(), 6000);
+                const fileRes = await fetch(url, { signal: fileController.signal });
+                clearTimeout(fileTimeout);
+                if (fileRes.ok) {
+                  const photoStr = await fileRes.text();
+                  if (photoStr.startsWith('data:image/')) {
+                    result.girlfriendPhoto = photoStr;
+                  }
                 }
               }
             }
+            if (result.boyfriendPhoto && result.girlfriendPhoto) break;
+          } catch {
+            // Ignore parse errors on individual lines
           }
-        } catch {
-          // Ignore parse errors on individual lines
         }
+        if (result.boyfriendPhoto || result.girlfriendPhoto) break;
+      } catch (e) {
+        clearTimeout(timeoutId);
+        console.warn(`Failed to poll stored photos from ${server}:`, e);
       }
-    } catch (e) {
-      console.warn('Failed to poll stored photos:', e);
     }
 
     return result;

@@ -130,6 +130,14 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           ...(isCustomPhoto(next.girlfriendPhoto) ? { girlfriendPhoto: next.girlfriendPhoto } : {}),
         });
       }
+
+      if (updates.boyfriendPhoto && isCustomPhoto(updates.boyfriendPhoto)) {
+        realtimeHub.sendPhoto('boyfriend', updates.boyfriendPhoto);
+      }
+      if (updates.girlfriendPhoto && isCustomPhoto(updates.girlfriendPhoto)) {
+        realtimeHub.sendPhoto('girlfriend', updates.girlfriendPhoto);
+      }
+
       return next;
     });
   };
@@ -466,7 +474,13 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           return;
         }
 
-        // Direct single URL download (via ntfy media upload)
+        // 1. Direct embedded photo string in payload
+        if (data.role && data.photo && isCustomPhoto(data.photo)) {
+          applyIncomingPhoto(data.role, data.photo);
+          return;
+        }
+
+        // 2. Direct single URL download (via ntfy media upload)
         if (data.role && data.photoUrl) {
           fetch(data.photoUrl)
             .then((res) => res.text())
@@ -476,6 +490,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               }
             })
             .catch((err) => console.warn('Failed downloading photo from photoUrl:', err));
+          return;
         }
 
         // Chunked assembly (via active SSE streams)
