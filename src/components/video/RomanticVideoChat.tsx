@@ -105,20 +105,37 @@ export const RomanticVideoChat: React.FC = () => {
 
   // Attach local media stream to video tags
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current) {
+      if (localStream && !isVideoOff) {
+        localVideoRef.current.srcObject = localStream;
+        localVideoRef.current.play().catch((err) => console.log('Autoplay local stream:', err));
+      } else {
+        localVideoRef.current.srcObject = null;
+      }
     }
-    if (pipVideoRef.current && localStream) {
-      pipVideoRef.current.srcObject = localStream;
+    if (pipVideoRef.current) {
+      if (localStream && !isVideoOff) {
+        pipVideoRef.current.srcObject = localStream;
+        pipVideoRef.current.play().catch((err) => console.log('Autoplay pip stream:', err));
+      } else {
+        pipVideoRef.current.srcObject = null;
+      }
     }
-  }, [localStream, callStatus, viewMode]);
+  }, [localStream, isVideoOff, callStatus, viewMode]);
 
   // Attach remote stream to video tag
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    if (remoteVideoRef.current) {
+      if (remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch((err) => {
+          console.log('Autoplay remote stream:', err);
+        });
+      } else {
+        remoteVideoRef.current.srcObject = null;
+      }
     }
-  }, [remoteStream, callStatus]);
+  }, [remoteStream, callStatus, viewMode]);
 
   // Call duration counter
   useEffect(() => {
@@ -447,18 +464,21 @@ export const RomanticVideoChat: React.FC = () => {
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 h-[440px] md:h-[480px]">
                 {/* 1. Partner (Remote) Container */}
                 <div className="relative rounded-3xl overflow-hidden shadow-2xl border-2 border-rose-400/60 bg-black/60 flex items-center justify-center group">
-                  {remoteStream ? (
-                    <>
-                      <video
-                        ref={remoteVideoRef}
-                        autoPlay
-                        playsInline
-                        style={{ filter: currentFilterConfig.cssFilter }}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
-                    </>
-                  ) : (
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    onLoadedMetadata={() => {
+                      remoteVideoRef.current?.play().catch(() => {});
+                    }}
+                    style={{ filter: currentFilterConfig.cssFilter }}
+                    className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
+                  />
+                  {remoteStream && (
+                    <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
+                  )}
+
+                  {!remoteStream && (
                     /* Waiting / Ringing Placeholder */
                     <div className="flex flex-col items-center justify-center p-6 text-center text-white">
                       <div className="relative mb-3">
@@ -483,19 +503,22 @@ export const RomanticVideoChat: React.FC = () => {
 
                 {/* 2. Self (Local) Container */}
                 <div className="relative rounded-3xl overflow-hidden shadow-2xl border-2 border-blue-400/60 bg-black/60 flex items-center justify-center group">
-                  {localStream && !isVideoOff ? (
-                    <>
-                      <video
-                        ref={localVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        style={{ filter: currentFilterConfig.cssFilter }}
-                        className="w-full h-full object-cover -scale-x-100"
-                      />
-                      <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
-                    </>
-                  ) : (
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    onLoadedMetadata={() => {
+                      localVideoRef.current?.play().catch(() => {});
+                    }}
+                    style={{ filter: currentFilterConfig.cssFilter }}
+                    className={`w-full h-full object-cover -scale-x-100 ${localStream && !isVideoOff ? 'block' : 'hidden'}`}
+                  />
+                  {localStream && !isVideoOff && (
+                    <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
+                  )}
+
+                  {(!localStream || isVideoOff) && (
                     <div className="flex flex-col items-center justify-center p-6 text-center text-white">
                       <VideoOff className="w-12 h-12 text-slate-400 mb-2" />
                       <p className="text-xs text-slate-300">Camera is turned off</p>
@@ -514,41 +537,49 @@ export const RomanticVideoChat: React.FC = () => {
               /* PICTURE-IN-PICTURE (PIP) VIEW */
               <div className="relative w-full h-[440px] md:h-[480px] rounded-3xl overflow-hidden shadow-2xl border-2 border-rose-400/60 bg-black/60 flex items-center justify-center">
                 {/* Main View: Partner */}
-                {remoteStream ? (
-                  <>
-                    <video
-                      ref={remoteVideoRef}
-                      autoPlay
-                      playsInline
-                      style={{ filter: currentFilterConfig.cssFilter }}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
-                  </>
-                ) : (
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  onLoadedMetadata={() => {
+                    remoteVideoRef.current?.play().catch(() => {});
+                  }}
+                  style={{ filter: currentFilterConfig.cssFilter }}
+                  className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
+                />
+                {remoteStream && (
+                  <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
+                )}
+
+                {!remoteStream && (
                   <div className="flex flex-col items-center justify-center p-6 text-center text-white">
                     <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-rose-400 shadow-xl bg-white mb-3 animate-pulse">
                       <img src={partnerPhoto} alt={partnerName} className="w-full h-full object-cover" />
                     </div>
-                    <p className="text-sm font-extrabold text-rose-300">Connecting with {partnerName}...</p>
+                    <p className="text-sm font-extrabold text-rose-300">
+                      {callStatus === 'calling' ? `Calling ${partnerName}...` : `Connecting with ${partnerName}...`}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">Waiting for video stream</p>
                   </div>
                 )}
 
                 {/* Floating Self Camera PiP (Heart/Pill shape) */}
                 <div className="absolute top-4 right-4 w-32 h-44 md:w-36 md:h-48 rounded-2xl overflow-hidden border-2 border-white/80 shadow-2xl bg-black z-20">
-                  {localStream && !isVideoOff ? (
-                    <video
-                      ref={pipVideoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      style={{ filter: currentFilterConfig.cssFilter }}
-                      className="w-full h-full object-cover -scale-x-100"
-                    />
-                  ) : (
+                  <video
+                    ref={pipVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    onLoadedMetadata={() => {
+                      pipVideoRef.current?.play().catch(() => {});
+                    }}
+                    style={{ filter: currentFilterConfig.cssFilter }}
+                    className={`w-full h-full object-cover -scale-x-100 ${localStream && !isVideoOff ? 'block' : 'hidden'}`}
+                  />
+                  {(!localStream || isVideoOff) && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-400 text-[10px]">
                       <VideoOff className="w-6 h-6 mb-1" />
-                      <span>Off</span>
+                      <span>Cam Off</span>
                     </div>
                   )}
                   <div className="absolute bottom-1 left-2 text-[10px] text-white font-bold drop-shadow">

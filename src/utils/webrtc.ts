@@ -158,8 +158,12 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 type CallStateListener = (state: {
@@ -283,8 +287,19 @@ class RomanticVideoCallService {
       this.notify();
       return stream;
     } catch (err) {
-      console.warn('Could not acquire user camera/mic:', err);
-      return null;
+      console.warn('Could not acquire high-res camera/mic, trying basic fallback:', err);
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: videoWanted ? true : false,
+          audio: audioWanted ? true : false,
+        });
+        this.localStream = fallbackStream;
+        this.notify();
+        return fallbackStream;
+      } catch (fallbackErr) {
+        console.warn('Could not acquire user camera/mic even with fallback:', fallbackErr);
+        return null;
+      }
     }
   }
 
@@ -385,6 +400,26 @@ class RomanticVideoCallService {
     }
   }
 
+  // Wait for ICE gathering to complete so all candidates are embedded in SDP
+  private async waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 1200): Promise<void> {
+    if (pc.iceGatheringState === 'complete') return;
+    return new Promise((resolve) => {
+      let timeoutId: any = null;
+      const checkState = () => {
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(timeoutId);
+          pc.removeEventListener('icegatheringstatechange', checkState);
+          resolve();
+        }
+      };
+      pc.addEventListener('icegatheringstatechange', checkState);
+      timeoutId = setTimeout(() => {
+        pc.removeEventListener('icegatheringstatechange', checkState);
+        resolve();
+      }, timeoutMs);
+    });
+  }
+
   // Initialize WebRTC PeerConnection
   private createPeerConnection(myRole?: UserRole): RTCPeerConnection {
     if (this.peerConnection) {
@@ -399,26 +434,82 @@ class RomanticVideoCallService {
     // Attach local stream tracks
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {
-        pc.addTrack(track, this.localStream!);
+        try {
+          pc.addTrack(track, this.localStream!);
+        } catch (err) {
+          console.warn('Failed adding track to peer connection:', err);
+        }
       });
     }
 
-    // Handle remote track arrival
-    pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        this.remoteStream = event.streams[0];
-        this.status = 'connected';
-        this.notify();
+    // Ensure bidirectional audio & video transceivers exist
+    try {
+      const transceivers = pc.getTransceivers();
+      if (transceivers.length === 0) {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+        pc.addTransceiver('video', { direction: 'sendrecv' });
       }
+    } catch {}
+
+    // Handle remote track arrival - bulletproof handling for Chrome, Safari, Firefox
+    pc.ontrack = (event) => {
+      console.log('pc.ontrack event received:', event.track.kind, event.streams);
+
+      let targetStream = this.remoteStream;
+      if (!targetStream) {
+        targetStream = new MediaStream();
+      }
+
+      // Add track if not already present
+      if (!targetStream.getTracks().some((t) => t.id === event.track.id)) {
+        targetStream.addTrack(event.track);
+      }
+
+      // Also incorporate any other tracks in event.streams[0] if provided
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          if (!targetStream!.getTracks().some((t) => t.id === track.id)) {
+            targetStream!.addTrack(track);
+          }
+        });
+      }
+
+      // Re-notify whenever track unmutes (first RTP packet arrives)
+      event.track.onunmute = () => {
+        console.log('Remote track unmuted:', event.track.kind);
+        if (this.remoteStream) {
+          this.remoteStream = new MediaStream(this.remoteStream.getTracks());
+          this.status = 'connected';
+          this.notify();
+        }
+      };
+
+      // Always create a new MediaStream instance so React state setters detect a reference change and re-render
+      this.remoteStream = new MediaStream(targetStream.getTracks());
+      this.status = 'connected';
+      this.notify();
     };
 
-    // Trickle ICE candidates to partner
+    // Trickle ICE candidates with light debounce to avoid 429
+    let iceTimer: any = null;
+    let pendingIce: RTCIceCandidateInit[] = [];
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        this.sendSignal({
-          signalType: 'webrtc-ice',
-          candidate: event.candidate.toJSON(),
-        }, myRole);
+        pendingIce.push(event.candidate.toJSON());
+        clearTimeout(iceTimer);
+        iceTimer = setTimeout(() => {
+          if (pendingIce.length > 0) {
+            const batch = [...pendingIce];
+            pendingIce = [];
+            batch.forEach((cand) => {
+              this.sendSignal({
+                signalType: 'webrtc-ice',
+                candidate: cand,
+              }, myRole);
+            });
+          }
+        }, 300);
       }
     };
 
@@ -431,11 +522,21 @@ class RomanticVideoCallService {
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        this.status = 'connected';
+        this.notify();
+      }
+    };
+
     return pc;
   }
 
   // Create & send WebRTC Offer (Caller)
   private async initiateWebRTCOffer(myRole?: UserRole) {
+    if (!this.localStream) {
+      await this.getLocalMedia(true, true);
+    }
     const pc = this.createPeerConnection(myRole);
     try {
       const offer = await pc.createOffer({
@@ -443,9 +544,13 @@ class RomanticVideoCallService {
         offerToReceiveVideo: true,
       });
       await pc.setLocalDescription(offer);
+
+      // Wait briefly so STUN candidates are embedded directly into SDP offer
+      await this.waitForIceGathering(pc, 1000);
+
       await this.sendSignal({
         signalType: 'webrtc-offer',
-        sdp: offer,
+        sdp: pc.localDescription || offer,
       }, myRole);
     } catch (e) {
       console.error('Failed to create WebRTC offer:', e);
@@ -454,22 +559,34 @@ class RomanticVideoCallService {
 
   // Handle incoming WebRTC Offer & respond with Answer (Answerer)
   private async handleWebRTCOffer(offerSdp: RTCSessionDescriptionInit, myRole?: UserRole) {
+    // Ensure Answerer has acquired camera before creating answer
+    if (!this.localStream) {
+      await this.getLocalMedia(true, true);
+    }
+
     const pc = this.createPeerConnection(myRole);
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
 
-      // Process any early candidates received before remote description was ready
-      while (this.queuedCandidates.length > 0) {
-        const cand = this.queuedCandidates.shift();
-        if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand));
-      }
-
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
+      // Wait briefly so STUN candidates are embedded directly into SDP answer
+      await this.waitForIceGathering(pc, 1000);
+
+      // Process any early candidates received before remote description was ready
+      while (this.queuedCandidates.length > 0) {
+        const cand = this.queuedCandidates.shift();
+        if (cand) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(cand));
+          } catch {}
+        }
+      }
+
       await this.sendSignal({
         signalType: 'webrtc-answer',
-        sdp: answer,
+        sdp: pc.localDescription || answer,
       }, myRole);
     } catch (e) {
       console.error('Failed to handle WebRTC offer:', e);
