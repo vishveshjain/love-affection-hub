@@ -19,6 +19,8 @@ import {
   saveLoveNotes,
   saveMilestones,
   isCustomPhoto,
+  STORAGE_KEYS,
+  PERMANENT_KEYS,
 } from '../utils/storage';
 import { soundFx } from '../utils/audio';
 
@@ -511,7 +513,37 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const resetAllData = () => {
+    // Preserve precious dreams, notes, milestones, profile photos, and room setup!
+    const dreams = localStorage.getItem(STORAGE_KEYS.DREAMS) || localStorage.getItem(PERMANENT_KEYS.DREAMS_VAULT);
+    const notes = localStorage.getItem(STORAGE_KEYS.NOTES) || localStorage.getItem(PERMANENT_KEYS.NOTES_VAULT);
+    const milestones = localStorage.getItem(STORAGE_KEYS.MILESTONES) || localStorage.getItem(PERMANENT_KEYS.MILESTONES_VAULT);
+    const profileData = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const roomKey = localStorage.getItem('love_app_realtime_room_key_v1');
+
+    // Clear transient stats, coupons, animations, etc.
     localStorage.clear();
+
+    // Re-insert permanent data so written dreams, notes, and memories are never lost!
+    if (dreams) {
+      localStorage.setItem(STORAGE_KEYS.DREAMS, dreams);
+      localStorage.setItem(PERMANENT_KEYS.DREAMS_VAULT, dreams);
+    }
+    if (notes) {
+      localStorage.setItem(STORAGE_KEYS.NOTES, notes);
+      localStorage.setItem(PERMANENT_KEYS.NOTES_VAULT, notes);
+    }
+    if (milestones) {
+      localStorage.setItem(STORAGE_KEYS.MILESTONES, milestones);
+      localStorage.setItem(PERMANENT_KEYS.MILESTONES_VAULT, milestones);
+    }
+    if (profileData) {
+      localStorage.setItem(STORAGE_KEYS.PROFILE, profileData);
+    }
+    if (roomKey) {
+      localStorage.setItem('love_app_realtime_room_key_v1', roomKey);
+    }
+
+    soundFx.playPop(520, 0.08);
     window.location.reload();
   };
 

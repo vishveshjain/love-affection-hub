@@ -219,14 +219,18 @@ const MainContent: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              if (window.confirm('Reset all couple data and start fresh with Vishvesh & Laura?')) {
+              if (
+                window.confirm(
+                  'Reset affection counters (kisses, hugs, etc.) and coupons? Your written dreams, love notes, and photos will remain safely preserved.'
+                )
+              ) {
                 resetAllData();
               }
             }}
-            className="flex items-center gap-1 text-slate-400 hover:text-rose-600 transition text-[11px]"
+            className="flex items-center gap-1 text-slate-400 hover:text-rose-600 transition text-[11px] cursor-pointer"
           >
             <RefreshCw className="w-3 h-3" />
-            <span>Reset Data</span>
+            <span>Reset Counters</span>
           </button>
         </div>
       </footer>

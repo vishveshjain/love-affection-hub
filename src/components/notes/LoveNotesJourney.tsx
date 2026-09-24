@@ -11,7 +11,7 @@ import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
 import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
-import { Heart, Plus, CheckCircle2, Circle, Sparkles, MapPin, StickyNote } from 'lucide-react';
+import { Heart, Plus, CheckCircle2, Circle, Sparkles, MapPin, StickyNote, Trash2 } from 'lucide-react';
 
 const NOTE_COLORS = [
   { name: 'Rose Pink', class: 'bg-rose-100 border-rose-300 text-rose-900' },
@@ -197,6 +197,42 @@ export const LoveNotesJourney: React.FC = () => {
     });
   };
 
+  const handleDeleteNote = (id: string, title?: string) => {
+    if (window.confirm(`Delete "${title || 'this love note'}"?`)) {
+      const updated = notes.filter((n) => n.id !== id);
+      setNotes(updated);
+      saveLoveNotes(updated);
+      soundFx.playPop(420, 0.05);
+
+      realtimeHub.publish({
+        type: 'NOTE_UPDATE',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: { notes: updated },
+        timestamp: Date.now(),
+      });
+    }
+  };
+
+  const handleDeleteMilestone = (id: string, title?: string) => {
+    if (window.confirm(`Delete milestone "${title || ''}"?`)) {
+      const updated = milestones.filter((m) => m.id !== id);
+      setMilestones(updated);
+      saveMilestones(updated);
+      soundFx.playPop(420, 0.05);
+
+      realtimeHub.publish({
+        type: 'JOURNEY_UPDATE',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: { milestones: updated },
+        timestamp: Date.now(),
+      });
+    }
+  };
+
   const completedCount = milestones.filter((m) => m.completed).length;
   const progressPercent = Math.round((completedCount / (milestones.length || 1)) * 100);
 
@@ -265,7 +301,21 @@ export const LoveNotesJourney: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between gap-1 text-[11px] font-semibold opacity-75 mb-1.5">
                     <span>From {note.authorName} {note.authorRole === 'boyfriend' ? '🤴' : '👸'}</span>
-                    <span>{note.date}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span>{note.date}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteNote(note.id, note.title);
+                        }}
+                        className="opacity-50 hover:opacity-100 text-slate-700 hover:text-rose-600 p-0.5 rounded transition cursor-pointer"
+                        title="Delete note"
+                        aria-label="Delete note"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <h4 className="font-extrabold text-sm mb-2">{note.title}</h4>
                   <p className="text-xs leading-relaxed font-sans whitespace-pre-wrap">
@@ -342,7 +392,19 @@ export const LoveNotesJourney: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="shrink-0">
+                <div className="shrink-0 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteMilestone(milestone.id, milestone.title);
+                    }}
+                    className="opacity-40 hover:opacity-100 text-slate-400 hover:text-rose-500 p-1.5 rounded-lg transition cursor-pointer"
+                    title="Delete milestone"
+                    aria-label="Delete milestone"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                   {milestone.completed ? (
                     <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-100" />
                   ) : (

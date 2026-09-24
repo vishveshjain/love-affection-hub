@@ -6,7 +6,7 @@ import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
 import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
-import { Moon, Sparkles, Plus, Heart, Cloud, Compass } from 'lucide-react';
+import { Moon, Sparkles, Plus, Heart, Cloud, Compass, Trash2 } from 'lucide-react';
 
 export const DreamJournal: React.FC = () => {
   const { profile, currentUserName, partnerName } = useCouple();
@@ -111,6 +111,24 @@ export const DreamJournal: React.FC = () => {
     });
   };
 
+  const handleDeleteDream = (id: string, title?: string) => {
+    if (window.confirm(`Delete "${title || 'this dream'}"?`)) {
+      const updated = dreams.filter((d) => d.id !== id);
+      setDreams(updated);
+      saveDreams(updated);
+      soundFx.playPop(420, 0.05);
+
+      realtimeHub.publish({
+        type: 'DREAM_UPDATE',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: { dreams: updated },
+        timestamp: Date.now(),
+      });
+    }
+  };
+
   const filteredDreams = dreams.filter((d) =>
     activeFilter === 'all' ? true : d.type === activeFilter
   );
@@ -205,7 +223,21 @@ export const DreamJournal: React.FC = () => {
                     {isNight ? <Moon className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
                     <span>{isNight ? 'Dreamt Last Night 🌙' : 'Our Future Dream 🌟'}</span>
                   </span>
-                  <span className="text-[11px] text-slate-400 font-medium">{item.date}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400 font-medium">{item.date}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteDream(item.id, item.title);
+                      }}
+                      className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 p-1 rounded-lg transition-all cursor-pointer"
+                      title="Delete dream"
+                      aria-label="Delete dream"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <h4 className="font-extrabold text-slate-800 text-base mb-1">

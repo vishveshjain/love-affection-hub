@@ -221,7 +221,7 @@ export const DEFAULT_MILESTONES: JourneyMilestone[] = [
   },
 ];
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   PROFILE: 'love_app_couple_profile_v6',
   STATS: 'love_app_affection_stats_v2',
   COUPONS: 'love_app_scratch_coupons_v2',
@@ -230,6 +230,12 @@ const STORAGE_KEYS = {
   NOTES: 'love_app_notes_v2',
   MILESTONES: 'love_app_milestones_v2',
   CHAT: 'love_app_chat_messages_v2',
+};
+
+export const PERMANENT_KEYS = {
+  DREAMS_VAULT: 'love_app_permanent_dreams_vault_v1',
+  NOTES_VAULT: 'love_app_permanent_notes_vault_v1',
+  MILESTONES_VAULT: 'love_app_permanent_milestones_vault_v1',
 };
 
 export function loadProfile(): CoupleProfile {
@@ -309,8 +315,11 @@ export function saveCoupons(coupons: ScratchCoupon[]): void {
 
 export function loadDreams(): DreamItem[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.DREAMS);
-    if (raw) return JSON.parse(raw);
+    const raw = localStorage.getItem(STORAGE_KEYS.DREAMS) || localStorage.getItem(PERMANENT_KEYS.DREAMS_VAULT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
   } catch (e) {
     console.error('Failed to load dreams', e);
   }
@@ -319,7 +328,9 @@ export function loadDreams(): DreamItem[] {
 
 export function saveDreams(dreams: DreamItem[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.DREAMS, JSON.stringify(dreams));
+    const json = JSON.stringify(dreams);
+    localStorage.setItem(STORAGE_KEYS.DREAMS, json);
+    localStorage.setItem(PERMANENT_KEYS.DREAMS_VAULT, json);
   } catch (e) {
     console.error('Failed to save dreams', e);
   }
@@ -327,8 +338,11 @@ export function saveDreams(dreams: DreamItem[]): void {
 
 export function loadLoveNotes(): LoveNote[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.NOTES);
-    if (raw) return JSON.parse(raw);
+    const raw = localStorage.getItem(STORAGE_KEYS.NOTES) || localStorage.getItem(PERMANENT_KEYS.NOTES_VAULT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
   } catch (e) {
     console.error('Failed to load notes', e);
   }
@@ -337,7 +351,9 @@ export function loadLoveNotes(): LoveNote[] {
 
 export function saveLoveNotes(notes: LoveNote[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
+    const json = JSON.stringify(notes);
+    localStorage.setItem(STORAGE_KEYS.NOTES, json);
+    localStorage.setItem(PERMANENT_KEYS.NOTES_VAULT, json);
   } catch (e) {
     console.error('Failed to save notes', e);
   }
@@ -345,8 +361,11 @@ export function saveLoveNotes(notes: LoveNote[]): void {
 
 export function loadMilestones(): JourneyMilestone[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.MILESTONES);
-    if (raw) return JSON.parse(raw);
+    const raw = localStorage.getItem(STORAGE_KEYS.MILESTONES) || localStorage.getItem(PERMANENT_KEYS.MILESTONES_VAULT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
   } catch (e) {
     console.error('Failed to load milestones', e);
   }
@@ -355,7 +374,9 @@ export function loadMilestones(): JourneyMilestone[] {
 
 export function saveMilestones(milestones: JourneyMilestone[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.MILESTONES, JSON.stringify(milestones));
+    const json = JSON.stringify(milestones);
+    localStorage.setItem(STORAGE_KEYS.MILESTONES, json);
+    localStorage.setItem(PERMANENT_KEYS.MILESTONES_VAULT, json);
   } catch (e) {
     console.error('Failed to save milestones', e);
   }
