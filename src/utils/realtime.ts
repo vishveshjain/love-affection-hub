@@ -431,6 +431,122 @@ export class RealtimeService {
     this.isConnected = false;
     this.notifyStatus(false);
   }
+
+  public async sendPhoto(role: 'boyfriend' | 'girlfriend', photoDataUrl: string): Promise<void> {
+    if (!photoDataUrl || photoDataUrl.length < 50) return;
+
+    // 1. Upload to ntfy.sh media topic for persistent URL access
+    const room = this.currentRoomKey || getRoomKey();
+    const mediaTopic = `${getTopicName(room)}-media-v1`;
+    let fileUrl = '';
+    try {
+      const res = await fetch(`https://ntfy.sh/${mediaTopic}`, {
+        method: 'PUT',
+        headers: {
+          Filename: `${role}_avatar.txt`,
+          Title: `${role}_avatar`,
+        },
+        body: photoDataUrl,
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.attachment?.url) {
+          fileUrl = json.attachment.url;
+        }
+      }
+    } catch (e) {
+      console.warn('ntfy.sh media upload fallback:', e);
+    }
+
+    if (fileUrl) {
+      await this.publish({
+        type: 'PHOTO_UPDATE',
+        clientId: getClientId(),
+        senderRole: this.currentRole,
+        senderName: this.currentUserName,
+        data: {
+          role,
+          photoUrl: fileUrl,
+          timestamp: Date.now(),
+        },
+        timestamp: Date.now(),
+      });
+    }
+
+    // 2. Stream chunked photo across active SSE channels for instant sub-second delivery
+    const CHUNK_SIZE = 2200;
+    const total = Math.ceil(photoDataUrl.length / CHUNK_SIZE);
+    const photoId = `photo_${role}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    for (let index = 0; index < total; index++) {
+      const chunk = photoDataUrl.substring(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE);
+      await this.publish({
+        type: 'PHOTO_UPDATE',
+        clientId: getClientId(),
+        senderRole: this.currentRole,
+        senderName: this.currentUserName,
+        data: {
+          role,
+          photoId,
+          index,
+          total,
+          chunk,
+        },
+        timestamp: Date.now(),
+      });
+      // 30ms throttle between chunks to avoid network congestion
+      await new Promise((r) => setTimeout(r, 30));
+    }
+  }
+
+  public async fetchLatestStoredPhotos(): Promise<{ boyfriendPhoto?: string; girlfriendPhoto?: string }> {
+    const room = this.currentRoomKey || getRoomKey();
+    const mediaTopic = `${getTopicName(room)}-media-v1`;
+    const result: { boyfriendPhoto?: string; girlfriendPhoto?: string } = {};
+
+    try {
+      const res = await fetch(`https://ntfy.sh/${mediaTopic}/json?poll=1`);
+      if (!res.ok) return result;
+      const text = await res.text();
+      const lines = text.trim().split('\n');
+
+      // Process in reverse to get the newest uploaded photo for each role
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line);
+          const title = parsed.title || '';
+          const url = parsed.attachment?.url;
+          if (url) {
+            if (title.includes('boyfriend') && !result.boyfriendPhoto) {
+              const fileRes = await fetch(url);
+              if (fileRes.ok) {
+                const photoStr = await fileRes.text();
+                if (photoStr.startsWith('data:image/')) {
+                  result.boyfriendPhoto = photoStr;
+                }
+              }
+            } else if (title.includes('girlfriend') && !result.girlfriendPhoto) {
+              const fileRes = await fetch(url);
+              if (fileRes.ok) {
+                const photoStr = await fileRes.text();
+                if (photoStr.startsWith('data:image/')) {
+                  result.girlfriendPhoto = photoStr;
+                }
+              }
+            }
+          }
+        } catch {
+          // Ignore parse errors on individual lines
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to poll stored photos:', e);
+    }
+
+    return result;
+  }
 }
 
 export const realtimeHub = new RealtimeService();

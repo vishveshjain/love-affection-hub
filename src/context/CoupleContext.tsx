@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import confetti from 'canvas-confetti';
 import {
   CoupleProfile,
@@ -132,12 +132,40 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
   };
 
+  const chunkBuffers = useRef<Map<string, { chunks: string[]; total: number; role: UserRole }>>(new Map());
+
+  const applyIncomingPhoto = (role: UserRole, fullPhoto: string) => {
+    if (!isCustomPhoto(fullPhoto)) return;
+    const isBf = role === 'boyfriend';
+    setProfile((prev) => {
+      const currentPhoto = isBf ? prev.boyfriendPhoto : prev.girlfriendPhoto;
+      if (currentPhoto === fullPhoto) return prev;
+      const next = {
+        ...prev,
+        [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: fullPhoto,
+      };
+      saveProfile(next);
+      return next;
+    });
+
+    soundFx.playCelebration();
+    confetti({
+      particleCount: 50,
+      spread: 70,
+      origin: { y: 0.5 },
+    });
+  };
+
   const updateProfilePhoto = (role: UserRole, photoDataUrl: string) => {
     const isBf = role === 'boyfriend';
-    setProfile((prev) => ({
-      ...prev,
-      [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
-    }));
+    setProfile((prev) => {
+      const next = {
+        ...prev,
+        [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
+      };
+      saveProfile(next);
+      return next;
+    });
     saveCloudData({
       [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
     });
@@ -148,20 +176,8 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       origin: { y: 0.5 },
     });
 
-    // Immediately push high-resolution photo to cloud store, then notify partner
-    pushToCloudNow().then(() => {
-      realtimeHub.publish({
-        type: 'PHOTO_UPDATE',
-        clientId: getClientId(),
-        senderRole: profile.currentUserRole,
-        senderName: currentUserName,
-        data: {
-          role,
-          hasCloudPhoto: true,
-        },
-        timestamp: Date.now(),
-      });
-    });
+    // Stream photo across media store and chunked real-time SSE channel
+    realtimeHub.sendPhoto(role, photoDataUrl);
   };
 
   const switchCurrentUserRole = (role: UserRole) => {
@@ -356,8 +372,34 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     });
 
+    // Fetch latest stored photos from persistent media topic
+    realtimeHub.fetchLatestStoredPhotos().then((photos) => {
+      if (photos.boyfriendPhoto && isCustomPhoto(photos.boyfriendPhoto)) {
+        applyIncomingPhoto('boyfriend', photos.boyfriendPhoto);
+      }
+      if (photos.girlfriendPhoto && isCustomPhoto(photos.girlfriendPhoto)) {
+        applyIncomingPhoto('girlfriend', photos.girlfriendPhoto);
+      }
+    });
+
     const unsubPresence = realtimeHub.onPartnerPresenceChange((online) => {
       setPartnerOnline(online);
+      if (online) {
+        // If partner is online and we don't have their custom photo, request it!
+        const partnerCurrentPhoto = partnerRole === 'boyfriend' ? profile.boyfriendPhoto : profile.girlfriendPhoto;
+        if (!isCustomPhoto(partnerCurrentPhoto)) {
+          realtimeHub.publish({
+            type: 'PHOTO_UPDATE',
+            clientId: getClientId(),
+            senderRole: profile.currentUserRole,
+            senderName: currentUserName,
+            data: {
+              requestPhotoFor: partnerRole,
+            },
+            timestamp: Date.now(),
+          });
+        }
+      }
     });
 
     const unsubEvents = realtimeHub.subscribe((payload) => {
@@ -410,27 +452,48 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
       } else if (payload.type === 'PHOTO_UPDATE') {
-        if (payload.data?.role) {
-          const { role, photo } = payload.data;
-          soundFx.playCelebration();
-          confetti({
-            particleCount: 45,
-            spread: 60,
-            origin: { y: 0.5 },
-          });
+        const data = payload.data;
+        if (!data) return;
 
-          if (isCustomPhoto(photo)) {
-            setProfile((prev) => ({
-              ...prev,
-              [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photo,
-            }));
+        // If partner requests my photo, stream it to them!
+        if (data.requestPhotoFor && data.requestPhotoFor === profile.currentUserRole) {
+          const myPhoto = profile.currentUserRole === 'boyfriend' ? profile.boyfriendPhoto : profile.girlfriendPhoto;
+          if (isCustomPhoto(myPhoto)) {
+            realtimeHub.sendPhoto(profile.currentUserRole, myPhoto);
           }
+          return;
+        }
 
-          // Fetch the high-resolution photo from the cloud store
-          fetchCloudData();
-          setTimeout(() => {
-            fetchCloudData();
-          }, 1200);
+        // Direct single URL download (via ntfy media upload)
+        if (data.role && data.photoUrl) {
+          fetch(data.photoUrl)
+            .then((res) => res.text())
+            .then((photoStr) => {
+              if (isCustomPhoto(photoStr)) {
+                applyIncomingPhoto(data.role, photoStr);
+              }
+            })
+            .catch((err) => console.warn('Failed downloading photo from photoUrl:', err));
+        }
+
+        // Chunked assembly (via active SSE streams)
+        if (data.role && data.photoId && typeof data.index === 'number' && data.total && typeof data.chunk === 'string') {
+          const { role, photoId, index, total, chunk } = data;
+          let entry = chunkBuffers.current.get(photoId);
+          if (!entry) {
+            entry = { chunks: new Array(total).fill(''), total, role };
+            chunkBuffers.current.set(photoId, entry);
+          }
+          entry.chunks[index] = chunk;
+
+          const isComplete = entry.chunks.length === total && entry.chunks.every((c) => Boolean(c && c.length > 0));
+          if (isComplete) {
+            const fullPhoto = entry.chunks.join('');
+            chunkBuffers.current.delete(photoId);
+            if (isCustomPhoto(fullPhoto)) {
+              applyIncomingPhoto(role, fullPhoto);
+            }
+          }
         }
       }
     });
