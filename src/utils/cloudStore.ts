@@ -17,6 +17,7 @@ import {
   loadStats,
   loadProfile,
   saveProfile,
+  isCustomPhoto,
 } from './storage';
 
 export interface CloudCoupleData {
@@ -181,19 +182,40 @@ export async function fetchCloudData(): Promise<CloudCoupleData | null> {
       try {
         const localProf = loadProfile();
         let profChanged = false;
-        if (data.boyfriendPhoto && data.boyfriendPhoto.length > 50 && data.boyfriendPhoto !== localProf.boyfriendPhoto) {
-          localProf.boyfriendPhoto = data.boyfriendPhoto;
-          profChanged = true;
+        let needsCloudPush = false;
+
+        // Boyfriend photo:
+        if (isCustomPhoto(data.boyfriendPhoto)) {
+          if (data.boyfriendPhoto !== localProf.boyfriendPhoto) {
+            localProf.boyfriendPhoto = data.boyfriendPhoto!;
+            profChanged = true;
+          }
+        } else if (isCustomPhoto(localProf.boyfriendPhoto)) {
+          data.boyfriendPhoto = localProf.boyfriendPhoto;
+          needsCloudPush = true;
         }
-        if (data.girlfriendPhoto && data.girlfriendPhoto.length > 50 && data.girlfriendPhoto !== localProf.girlfriendPhoto) {
-          localProf.girlfriendPhoto = data.girlfriendPhoto;
-          profChanged = true;
+
+        // Girlfriend photo:
+        if (isCustomPhoto(data.girlfriendPhoto)) {
+          if (data.girlfriendPhoto !== localProf.girlfriendPhoto) {
+            localProf.girlfriendPhoto = data.girlfriendPhoto!;
+            profChanged = true;
+          }
+        } else if (isCustomPhoto(localProf.girlfriendPhoto)) {
+          data.girlfriendPhoto = localProf.girlfriendPhoto;
+          needsCloudPush = true;
         }
+
         if (profChanged) {
           saveProfile(localProf);
         }
-      } catch {
-        // Ignore
+
+        if (needsCloudPush) {
+          inMemoryCloudData = data;
+          pushToCloudNow();
+        }
+      } catch (err) {
+        console.warn('Error syncing profile photos from cloud:', err);
       }
 
       inMemoryCloudData = data;
@@ -260,6 +282,7 @@ export async function pushToCloudNow(): Promise<boolean> {
 }
 
 export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' | 'coupleKey' | 'updatedAt'>>) {
+  const localProf = loadProfile();
   const current: CloudCoupleData = inMemoryCloudData || {
     version: 2,
     coupleKey: 'vishvesh-laura-2026',
@@ -271,15 +294,46 @@ export function saveCloudData(partial: Partial<Omit<CloudCoupleData, 'version' |
     coupons: loadCoupons(),
     memories: loadMemoriesFromLocal(),
     stats: loadStats(),
+    boyfriendPhoto: isCustomPhoto(localProf.boyfriendPhoto) ? localProf.boyfriendPhoto : undefined,
+    girlfriendPhoto: isCustomPhoto(localProf.girlfriendPhoto) ? localProf.girlfriendPhoto : undefined,
   };
+
+  // Determine final boyfriendPhoto (custom photos ALWAYS win, defaults are NEVER saved)
+  const finalBfPhoto =
+    isCustomPhoto(partial.boyfriendPhoto)
+      ? partial.boyfriendPhoto
+      : isCustomPhoto(current.boyfriendPhoto)
+      ? current.boyfriendPhoto
+      : isCustomPhoto(localProf.boyfriendPhoto)
+      ? localProf.boyfriendPhoto
+      : undefined;
+
+  // Determine final girlfriendPhoto (custom photos ALWAYS win, defaults are NEVER saved)
+  const finalGfPhoto =
+    isCustomPhoto(partial.girlfriendPhoto)
+      ? partial.girlfriendPhoto
+      : isCustomPhoto(current.girlfriendPhoto)
+      ? current.girlfriendPhoto
+      : isCustomPhoto(localProf.girlfriendPhoto)
+      ? localProf.girlfriendPhoto
+      : undefined;
 
   const updated: CloudCoupleData = {
     ...current,
     ...partial,
+    boyfriendPhoto: finalBfPhoto,
+    girlfriendPhoto: finalGfPhoto,
     updatedAt: Date.now(),
   };
 
   inMemoryCloudData = updated;
+
+  // If this update was explicitly for a profile photo, push immediately to cloud
+  if (isCustomPhoto(partial.boyfriendPhoto) || isCustomPhoto(partial.girlfriendPhoto)) {
+    clearTimeout(saveDebounceTimer);
+    pushToCloudNow();
+    return;
+  }
 
   // Debounced push to cloud to prevent excessive HTTP traffic
   clearTimeout(saveDebounceTimer);

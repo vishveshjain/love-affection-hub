@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useCouple } from '../context/CoupleContext';
-import { UserRole } from '../types';
-import { fileToDataUrl, DEFAULT_BOYFRIEND_AVATAR, DEFAULT_GIRLFRIEND_AVATAR } from '../utils/storage';
+import { UserRole, CoupleProfile } from '../types';
+import { fileToDataUrl, DEFAULT_BOYFRIEND_AVATAR, DEFAULT_GIRLFRIEND_AVATAR, isCustomPhoto } from '../utils/storage';
 import { soundFx } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import { Heart, Sparkles, Upload, ArrowRight, UserCheck, Calendar, Camera } from 'lucide-react';
@@ -23,11 +23,11 @@ export const OnboardingModal: React.FC = () => {
   const [showPartnerUpload, setShowPartnerUpload] = useState(false);
 
   useEffect(() => {
-    if (profile.boyfriendPhoto) setBoyfriendPhoto(profile.boyfriendPhoto);
+    if (isCustomPhoto(profile.boyfriendPhoto)) setBoyfriendPhoto(profile.boyfriendPhoto);
   }, [profile.boyfriendPhoto]);
 
   useEffect(() => {
-    if (profile.girlfriendPhoto) setGirlfriendPhoto(profile.girlfriendPhoto);
+    if (isCustomPhoto(profile.girlfriendPhoto)) setGirlfriendPhoto(profile.girlfriendPhoto);
   }, [profile.girlfriendPhoto]);
 
   const bfFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -62,20 +62,38 @@ export const OnboardingModal: React.FC = () => {
   };
 
   const handleFinish = () => {
-    updateProfile({
+    const isBf = currentUserRole === 'boyfriend';
+    const profileUpdates: Partial<CoupleProfile> = {
       currentUserRole,
       boyfriendName: boyfriendName.trim() || 'Vishvesh',
       girlfriendName: girlfriendName.trim() || 'Laura',
-      boyfriendPhoto,
-      girlfriendPhoto,
       relationshipStartDate,
       isConfigured: true,
-    });
-    if (currentUserRole === 'boyfriend') {
-      updateProfilePhoto('boyfriend', boyfriendPhoto);
+    };
+
+    if (isBf) {
+      if (isCustomPhoto(boyfriendPhoto)) {
+        profileUpdates.boyfriendPhoto = boyfriendPhoto;
+        updateProfilePhoto('boyfriend', boyfriendPhoto);
+      }
+      // ONLY set girlfriendPhoto if the user explicitly uploaded a custom photo for her
+      if (isCustomPhoto(girlfriendPhoto) && girlfriendPhoto !== profile.girlfriendPhoto) {
+        profileUpdates.girlfriendPhoto = girlfriendPhoto;
+        updateProfilePhoto('girlfriend', girlfriendPhoto);
+      }
     } else {
-      updateProfilePhoto('girlfriend', girlfriendPhoto);
+      if (isCustomPhoto(girlfriendPhoto)) {
+        profileUpdates.girlfriendPhoto = girlfriendPhoto;
+        updateProfilePhoto('girlfriend', girlfriendPhoto);
+      }
+      // ONLY set boyfriendPhoto if the user explicitly uploaded a custom photo for him
+      if (isCustomPhoto(boyfriendPhoto) && boyfriendPhoto !== profile.boyfriendPhoto) {
+        profileUpdates.boyfriendPhoto = boyfriendPhoto;
+        updateProfilePhoto('boyfriend', boyfriendPhoto);
+      }
     }
+
+    updateProfile(profileUpdates);
     setShowOnboarding(false);
     soundFx.playCelebration();
     confetti({

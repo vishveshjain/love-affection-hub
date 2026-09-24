@@ -338,7 +338,20 @@ export class RealtimeService {
     }
 
     const topic = getTopicName(this.currentRoomKey || getRoomKey());
-    const bodyStr = JSON.stringify(fullPayload);
+    let bodyStr = JSON.stringify(fullPayload);
+
+    // If payload approaches ntfy's strict 4096-byte limit, fallback to lightweight event with cloud trigger
+    if (bodyStr.length > 3800 && fullPayload.type === 'PHOTO_UPDATE' && fullPayload.data?.photo) {
+      const lightweightPayload = {
+        ...fullPayload,
+        data: {
+          ...fullPayload.data,
+          photo: undefined,
+          hasCloudPhoto: true,
+        },
+      };
+      bodyStr = JSON.stringify(lightweightPayload);
+    }
 
     // Broadcast to ALL servers simultaneously so that partner receives it on whichever server they are connected to!
     const results = await Promise.allSettled(

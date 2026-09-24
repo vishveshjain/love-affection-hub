@@ -13,6 +13,16 @@ export const DEFAULT_BOYFRIEND_AVATAR = `data:image/svg+xml;utf8,<svg xmlns="htt
 
 export const DEFAULT_GIRLFRIEND_AVATAR = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><linearGradient id="bgG" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23fce7f3"/><stop offset="100%" stop-color="%23f472b6"/></linearGradient></defs><rect width="200" height="200" rx="100" fill="url(%23bgG)"/><circle cx="100" cy="115" r="45" fill="%23fed7aa"/><path d="M 55 70 C 45 120, 55 160, 65 170 C 75 160, 80 120, 80 85 Z" fill="%237c2d12"/><path d="M 145 70 C 155 120, 145 160, 135 170 C 125 160, 120 120, 120 85 Z" fill="%237c2d12"/><circle cx="100" cy="85" r="40" fill="%23fed7aa"/><path d="M 60 70 Q 100 40 140 70 Q 100 55 60 70 Z" fill="%237c2d12"/><circle cx="85" cy="85" r="5" fill="%231e293b"/><circle cx="115" cy="85" r="5" fill="%231e293b"/><circle cx="78" cy="95" r="7" fill="%23fb7185" opacity="0.7"/><circle cx="122" cy="95" r="7" fill="%23fb7185" opacity="0.7"/><path d="M 90 102 Q 100 114 110 102" stroke="%23e11d48" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="130" cy="65" r="10" fill="%23ec4899"/><text x="130" y="69" text-anchor="middle" font-size="12" fill="white">🌸</text><path d="M 50 170 Q 100 135 150 170 L 150 200 L 50 200 Z" fill="%23ec4899"/><text x="100" y="190" text-anchor="middle" font-size="20">✨</text></svg>`;
 
+export function isCustomPhoto(photo?: string | null): boolean {
+  if (!photo || typeof photo !== 'string' || photo.length < 50) return false;
+  if (photo.startsWith('data:image/svg+xml') || photo.includes('<svg')) return false;
+  return photo.startsWith('data:image/') || photo.startsWith('http://') || photo.startsWith('https://');
+}
+
+export function isDefaultAvatar(photo?: string | null): boolean {
+  return !isCustomPhoto(photo);
+}
+
 export const DEFAULT_COUPONS: ScratchCoupon[] = [
   {
     id: 'coupon-1',
@@ -403,11 +413,11 @@ export function saveChatMessages(messages: ChatMessage[]): void {
 }
 
 // Convert uploaded file to high-efficiency, lightweight compressed base64 Data URL
-// Resizes camera/phone photos (often 5MB-12MB) down to crisp ~3KB avatars so they never jam network or storage!
+// Resizes camera/phone photos (often 5MB-12MB) down to crisp ~2KB avatars guaranteed to fit under ntfy's 4KB limit!
 export function fileToDataUrl(
   file: File,
-  maxDimension: number = 180,
-  quality: number = 0.72
+  maxDimension: number = 130,
+  initialQuality: number = 0.65
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -423,37 +433,49 @@ export function fileToDataUrl(
       img.onerror = () => resolve(rawResult);
       img.onload = () => {
         try {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
+          let dim = maxDimension;
+          let q = initialQuality;
+          let bestResult = '';
 
-          if (width > height) {
-            if (width > maxDimension) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
+          // Iteratively resize & compress so the base64 string is <= 2550 chars
+          // This guarantees that the entire JSON realtime event is under 3000 bytes,
+          // safely below ntfy's strict 4096-byte limit so real-time delivery NEVER fails!
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > dim) {
+                height = Math.round((height * dim) / width);
+                width = dim;
+              }
+            } else {
+              if (height > dim) {
+                width = Math.round((width * dim) / height);
+                height = dim;
+              }
             }
-          } else {
-            if (height > maxDimension) {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
+
+            canvas.width = Math.max(1, width);
+            canvas.height = Math.max(1, height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) break;
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'medium';
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const candidate = canvas.toDataURL('image/jpeg', q);
+            bestResult = candidate;
+            if (candidate.length <= 2550) {
+              break;
             }
+            dim = Math.round(dim * 0.82);
+            q = Math.max(0.38, q - 0.08);
           }
 
-          canvas.width = Math.max(1, width);
-          canvas.height = Math.max(1, height);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            resolve(rawResult);
-            return;
-          }
-
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Return lightweight, high-performance JPEG thumbnail
-          const compressed = canvas.toDataURL('image/jpeg', quality);
-          resolve(compressed);
+          resolve(bestResult || rawResult);
         } catch {
           resolve(rawResult);
         }

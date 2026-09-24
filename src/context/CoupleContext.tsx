@@ -18,12 +18,13 @@ import {
   saveDreams,
   saveLoveNotes,
   saveMilestones,
+  isCustomPhoto,
 } from '../utils/storage';
 import { soundFx } from '../utils/audio';
 
 import { getRandomWhisper } from '../utils/whispers';
 import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
-import { saveCloudData, startAutoCloudSync, onCloudDataLoaded, saveMemoriesToLocal } from '../utils/cloudStore';
+import { saveCloudData, startAutoCloudSync, onCloudDataLoaded, saveMemoriesToLocal, fetchCloudData, pushToCloudNow } from '../utils/cloudStore';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -97,11 +98,34 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const updateProfile = (updates: Partial<CoupleProfile>) => {
     setProfile((prev) => {
-      const next = { ...prev, ...updates };
-      if (updates.boyfriendPhoto || updates.girlfriendPhoto) {
+      const next = { ...prev };
+
+      if (updates.currentUserRole) next.currentUserRole = updates.currentUserRole;
+      if (updates.boyfriendName) next.boyfriendName = updates.boyfriendName;
+      if (updates.girlfriendName) next.girlfriendName = updates.girlfriendName;
+      if (updates.boyfriendMood) next.boyfriendMood = updates.boyfriendMood;
+      if (updates.girlfriendMood) next.girlfriendMood = updates.girlfriendMood;
+      if (updates.relationshipStartDate) next.relationshipStartDate = updates.relationshipStartDate;
+      if (typeof updates.isConfigured === 'boolean') next.isConfigured = updates.isConfigured;
+      if (typeof updates.soundEnabled === 'boolean') next.soundEnabled = updates.soundEnabled;
+      if (typeof updates.ambientMusicEnabled === 'boolean') next.ambientMusicEnabled = updates.ambientMusicEnabled;
+
+      // Only overwrite photo if updates provides a real custom photo, or if prev didn't have one
+      if (updates.boyfriendPhoto) {
+        if (isCustomPhoto(updates.boyfriendPhoto) || !isCustomPhoto(prev.boyfriendPhoto)) {
+          next.boyfriendPhoto = updates.boyfriendPhoto;
+        }
+      }
+      if (updates.girlfriendPhoto) {
+        if (isCustomPhoto(updates.girlfriendPhoto) || !isCustomPhoto(prev.girlfriendPhoto)) {
+          next.girlfriendPhoto = updates.girlfriendPhoto;
+        }
+      }
+
+      if (isCustomPhoto(updates.boyfriendPhoto) || isCustomPhoto(updates.girlfriendPhoto)) {
         saveCloudData({
-          boyfriendPhoto: next.boyfriendPhoto,
-          girlfriendPhoto: next.girlfriendPhoto,
+          ...(isCustomPhoto(next.boyfriendPhoto) ? { boyfriendPhoto: next.boyfriendPhoto } : {}),
+          ...(isCustomPhoto(next.girlfriendPhoto) ? { girlfriendPhoto: next.girlfriendPhoto } : {}),
         });
       }
       return next;
@@ -109,13 +133,17 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const updateProfilePhoto = (role: UserRole, photoDataUrl: string) => {
+    const isBf = role === 'boyfriend';
     setProfile((prev) => ({
       ...prev,
-      [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
+      [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
     }));
     saveCloudData({
-      [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
+      [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
     });
+    // Immediately push to cloud so partner can load it from cloud
+    pushToCloudNow();
+
     realtimeHub.publish({
       type: 'PHOTO_UPDATE',
       clientId: getClientId(),
@@ -123,7 +151,8 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       senderName: currentUserName,
       data: {
         role,
-        photo: photoDataUrl,
+        photo: photoDataUrl.length <= 2600 ? photoDataUrl : undefined,
+        hasCloudPhoto: true,
       },
       timestamp: Date.now(),
     });
@@ -319,10 +348,10 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (cloudData.stats) {
         setStats(cloudData.stats);
       }
-      if (cloudData.boyfriendPhoto && cloudData.boyfriendPhoto.length > 50) {
+      if (isCustomPhoto(cloudData.boyfriendPhoto)) {
         setProfile((prev) => (prev.boyfriendPhoto === cloudData.boyfriendPhoto ? prev : { ...prev, boyfriendPhoto: cloudData.boyfriendPhoto! }));
       }
-      if (cloudData.girlfriendPhoto && cloudData.girlfriendPhoto.length > 50) {
+      if (isCustomPhoto(cloudData.girlfriendPhoto)) {
         setProfile((prev) => (prev.girlfriendPhoto === cloudData.girlfriendPhoto ? prev : { ...prev, girlfriendPhoto: cloudData.girlfriendPhoto! }));
       }
     });
@@ -381,18 +410,23 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
       } else if (payload.type === 'PHOTO_UPDATE') {
-        if (payload.data?.role && payload.data?.photo) {
-          const { role, photo } = payload.data;
-          setProfile((prev) => ({
-            ...prev,
-            [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photo,
-          }));
-          soundFx.playCelebration();
-          confetti({
-            particleCount: 45,
-            spread: 60,
-            origin: { y: 0.5 },
-          });
+        if (payload.data?.role) {
+          const { role, photo, hasCloudPhoto } = payload.data;
+          if (isCustomPhoto(photo)) {
+            setProfile((prev) => ({
+              ...prev,
+              [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photo,
+            }));
+            soundFx.playCelebration();
+            confetti({
+              particleCount: 45,
+              spread: 60,
+              origin: { y: 0.5 },
+            });
+          }
+          if (hasCloudPhoto || !photo) {
+            fetchCloudData();
+          }
         }
       }
     });
