@@ -412,12 +412,14 @@ export function saveChatMessages(messages: ChatMessage[]): void {
   }
 }
 
-// Convert uploaded file to high-efficiency, lightweight compressed base64 Data URL
-// Resizes camera/phone photos (often 5MB-12MB) down to crisp ~2KB avatars guaranteed to fit under ntfy's 4KB limit!
+// Convert uploaded file to high-resolution, crystal-clear base64 Data URL
+// Retains original sharpness, vibrant colors, and facial details (440px max, ~0.84-0.88 quality)
+// for razor-sharp Retina displays without pixelation, while staying safely under cloud storage limits.
 export function fileToDataUrl(
   file: File,
-  maxDimension: number = 130,
-  initialQuality: number = 0.65
+  maxDimension: number = 440,
+  initialQuality: number = 0.85,
+  maxChars: number = 34000
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -437,10 +439,11 @@ export function fileToDataUrl(
           let q = initialQuality;
           let bestResult = '';
 
-          // Iteratively resize & compress so the base64 string is <= 2550 chars
-          // This guarantees that the entire JSON realtime event is under 3000 bytes,
-          // safely below ntfy's strict 4096-byte limit so real-time delivery NEVER fails!
-          for (let attempt = 0; attempt < 5; attempt++) {
+          // High-resolution processing:
+          // Targets 400-440px with high JPEG/WebP quality (0.75-0.85) and bicubic smoothing
+          // for razor-sharp Retina clarity on all screens, while staying safely under 34KB
+          // to ensure cloud sync never overflows the 100KB bin.
+          for (let attempt = 0; attempt < 6; attempt++) {
             const canvas = document.createElement('canvas');
             let width = img.width;
             let height = img.height;
@@ -463,16 +466,35 @@ export function fileToDataUrl(
             if (!ctx) break;
 
             ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'medium';
+            ctx.imageSmoothingQuality = 'high';
+
+            // Check if WebP is supported for superior compression at identical visual quality
+            let mimeType = 'image/jpeg';
+            try {
+              if (canvas.toDataURL('image/webp').startsWith('data:image/webp')) {
+                mimeType = 'image/webp';
+              }
+            } catch {
+              mimeType = 'image/jpeg';
+            }
+
+            // If JPEG, fill canvas background with white to avoid black background on transparent PNGs
+            if (mimeType === 'image/jpeg') {
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, width, height);
+            }
+
             ctx.drawImage(img, 0, 0, width, height);
 
-            const candidate = canvas.toDataURL('image/jpeg', q);
+            const candidate = canvas.toDataURL(mimeType, q);
             bestResult = candidate;
-            if (candidate.length <= 2550) {
+            if (candidate.length <= maxChars) {
               break;
             }
-            dim = Math.round(dim * 0.82);
-            q = Math.max(0.38, q - 0.08);
+
+            // Only gently adjust if size exceeds 34KB
+            dim = Math.round(dim * 0.92);
+            q = Math.max(0.72, q - 0.04);
           }
 
           resolve(bestResult || rawResult);

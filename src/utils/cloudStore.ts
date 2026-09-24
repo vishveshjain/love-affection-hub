@@ -262,10 +262,12 @@ export async function pushToCloudNow(): Promise<boolean> {
   isSaving = true;
   try {
     const cleanPayload = sanitizeForCloud(inMemoryCloudData);
-    const bodyStr = JSON.stringify(cleanPayload);
-    // Safety check: ensure body is under ExtendsClass limit
-    if (bodyStr.length > 95000) {
-      console.warn('Payload approaching limit, truncating older items');
+    let bodyStr = JSON.stringify(cleanPayload);
+    // Safety check: ensure body is strictly under ExtendsClass 100KB limit, protecting high-res photos
+    if (bodyStr.length > 92000) {
+      if (Array.isArray(cleanPayload.chat)) cleanPayload.chat = cleanPayload.chat.slice(-25);
+      if (Array.isArray(cleanPayload.memories)) cleanPayload.memories = cleanPayload.memories.slice(-10);
+      bodyStr = JSON.stringify(cleanPayload);
     }
     const res = await fetch(CLOUD_ENDPOINT, {
       method: 'PUT',

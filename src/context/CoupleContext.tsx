@@ -141,26 +141,26 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     saveCloudData({
       [isBf ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
     });
-    // Immediately push to cloud so partner can load it from cloud
-    pushToCloudNow();
-
-    realtimeHub.publish({
-      type: 'PHOTO_UPDATE',
-      clientId: getClientId(),
-      senderRole: profile.currentUserRole,
-      senderName: currentUserName,
-      data: {
-        role,
-        photo: photoDataUrl.length <= 2600 ? photoDataUrl : undefined,
-        hasCloudPhoto: true,
-      },
-      timestamp: Date.now(),
-    });
     soundFx.playCelebration();
     confetti({
       particleCount: 50,
       spread: 70,
       origin: { y: 0.5 },
+    });
+
+    // Immediately push high-resolution photo to cloud store, then notify partner
+    pushToCloudNow().then(() => {
+      realtimeHub.publish({
+        type: 'PHOTO_UPDATE',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: {
+          role,
+          hasCloudPhoto: true,
+        },
+        timestamp: Date.now(),
+      });
     });
   };
 
@@ -411,22 +411,26 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       } else if (payload.type === 'PHOTO_UPDATE') {
         if (payload.data?.role) {
-          const { role, photo, hasCloudPhoto } = payload.data;
+          const { role, photo } = payload.data;
+          soundFx.playCelebration();
+          confetti({
+            particleCount: 45,
+            spread: 60,
+            origin: { y: 0.5 },
+          });
+
           if (isCustomPhoto(photo)) {
             setProfile((prev) => ({
               ...prev,
               [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photo,
             }));
-            soundFx.playCelebration();
-            confetti({
-              particleCount: 45,
-              spread: 60,
-              origin: { y: 0.5 },
-            });
           }
-          if (hasCloudPhoto || !photo) {
+
+          // Fetch the high-resolution photo from the cloud store
+          fetchCloudData();
+          setTimeout(() => {
             fetchCloudData();
-          }
+          }, 1200);
         }
       }
     });
