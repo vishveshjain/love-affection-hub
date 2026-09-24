@@ -1,0 +1,650 @@
+// WebRTC Peer-to-Peer Romantic Video Calling Service
+// Enables high-definition, low-latency live video and audio directly between Vishvesh & Laura,
+// with signaling orchestrated over realtimeHub.
+
+import { realtimeHub, getClientId, RealtimePayload } from './realtime';
+import { UserRole } from '../types';
+import { romanticMusic } from './romanticMusic';
+
+export type RomanticThemeId =
+  | 'moonlight'
+  | 'sunset'
+  | 'candlelight'
+  | 'sakura'
+  | 'aurora';
+
+export type RomanticFilterId =
+  | 'dreamy'
+  | 'golden'
+  | 'rose'
+  | 'vintage'
+  | 'fairy'
+  | 'natural';
+
+export interface RomanticThemeConfig {
+  id: RomanticThemeId;
+  name: string;
+  icon: string;
+  description: string;
+  gradient: string;
+  particleEmoji: string;
+}
+
+export interface RomanticFilterConfig {
+  id: RomanticFilterId;
+  name: string;
+  icon: string;
+  cssFilter: string;
+  overlayClass: string;
+}
+
+export const ROMANTIC_THEMES: RomanticThemeConfig[] = [
+  {
+    id: 'moonlight',
+    name: 'Moonlight Sanctuary',
+    icon: '🌌',
+    description: 'Starry midnight sky, glowing constellations, and silver moonbeams',
+    gradient: 'from-slate-950 via-indigo-950 to-purple-950',
+    particleEmoji: '✨',
+  },
+  {
+    id: 'sunset',
+    name: 'Sunset Beach Romance',
+    icon: '🌅',
+    description: 'Pastel pink, coral orange, and golden waves of eternal love',
+    gradient: 'from-rose-950 via-pink-900 to-amber-950',
+    particleEmoji: '💖',
+  },
+  {
+    id: 'candlelight',
+    name: 'Candlelit Haven',
+    icon: '🕯️',
+    description: 'Flickering warm candle glow, red velvet roses, and intimate shadows',
+    gradient: 'from-neutral-950 via-rose-950 to-stone-900',
+    particleEmoji: '🌹',
+  },
+  {
+    id: 'sakura',
+    name: 'Cherry Blossom Dream',
+    icon: '🌸',
+    description: 'Drifting pink sakura blossoms dancing in a gentle romantic breeze',
+    gradient: 'from-pink-950 via-fuchsia-950 to-slate-900',
+    particleEmoji: '🌸',
+  },
+  {
+    id: 'aurora',
+    name: 'Love Aurora & Hearts',
+    icon: '💫',
+    description: 'Shimmering Northern lights infused with floating neon love hearts',
+    gradient: 'from-purple-950 via-violet-900 to-emerald-950',
+    particleEmoji: '💜',
+  },
+];
+
+export const ROMANTIC_FILTERS: RomanticFilterConfig[] = [
+  {
+    id: 'dreamy',
+    name: 'Dreamy Glow',
+    icon: '✨',
+    cssFilter: 'contrast(105%) brightness(108%) saturate(115%) blur(0.2px)',
+    overlayClass: 'bg-rose-500/10 mix-blend-screen',
+  },
+  {
+    id: 'golden',
+    name: 'Golden Hour',
+    icon: '🌅',
+    cssFilter: 'sepia(25%) saturate(135%) brightness(106%) contrast(104%)',
+    overlayClass: 'bg-amber-500/15 mix-blend-color-dodge',
+  },
+  {
+    id: 'rose',
+    name: 'Rose Quartz',
+    icon: '🌸',
+    cssFilter: 'hue-rotate(-10deg) saturate(120%) brightness(105%) contrast(103%)',
+    overlayClass: 'bg-pink-500/15 mix-blend-soft-light',
+  },
+  {
+    id: 'vintage',
+    name: '90s Love Letter',
+    icon: '📜',
+    cssFilter: 'sepia(35%) contrast(110%) brightness(96%) saturate(90%)',
+    overlayClass: 'bg-amber-900/10 mix-blend-multiply',
+  },
+  {
+    id: 'fairy',
+    name: 'Fairy Sparkle',
+    icon: '🧚',
+    cssFilter: 'brightness(112%) contrast(108%) saturate(125%)',
+    overlayClass: 'bg-gradient-to-tr from-purple-500/15 via-pink-400/10 to-amber-300/15 mix-blend-screen',
+  },
+  {
+    id: 'natural',
+    name: 'Crystal Natural',
+    icon: '🪞',
+    cssFilter: 'none',
+    overlayClass: 'opacity-0',
+  },
+];
+
+export interface VideoSignalData {
+  signalType:
+    | 'call-invite'
+    | 'call-accept'
+    | 'call-decline'
+    | 'call-end'
+    | 'webrtc-offer'
+    | 'webrtc-answer'
+    | 'webrtc-ice'
+    | 'romantic-reaction'
+    | 'touch-heart'
+    | 'theme-sync';
+  callerRole?: UserRole;
+  callerName?: string;
+  answererRole?: UserRole;
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  emoji?: string;
+  reactionId?: string;
+  x?: number;
+  y?: number;
+  touchActive?: boolean;
+  themeId?: RomanticThemeId;
+  filterId?: RomanticFilterId;
+  reason?: string;
+}
+
+const ICE_SERVERS: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' },
+  ],
+};
+
+type CallStateListener = (state: {
+  status: 'idle' | 'calling' | 'incoming' | 'connected';
+  callerName?: string;
+  callerRole?: UserRole;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
+  isMuted: boolean;
+  isVideoOff: boolean;
+  activeTheme: RomanticThemeId;
+  activeFilter: RomanticFilterId;
+  partnerTouchingHeart: boolean;
+}) => void;
+
+type ReactionListener = (reaction: { id: string; emoji: string; x: number; y: number; senderRole?: UserRole }) => void;
+
+class RomanticVideoCallService {
+  private peerConnection: RTCPeerConnection | null = null;
+  private localStream: MediaStream | null = null;
+  private remoteStream: MediaStream | null = null;
+  private queuedCandidates: RTCIceCandidateInit[] = [];
+  private unsubRealtime: (() => void) | null = null;
+
+  public status: 'idle' | 'calling' | 'incoming' | 'connected' = 'idle';
+  public callerRole?: UserRole;
+  public callerName?: string;
+  public isMuted: boolean = false;
+  public isVideoOff: boolean = false;
+  public activeTheme: RomanticThemeId = 'moonlight';
+  public activeFilter: RomanticFilterId = 'dreamy';
+  public partnerTouchingHeart: boolean = false;
+
+  private stateListeners: Set<CallStateListener> = new Set();
+  private reactionListeners: Set<ReactionListener> = new Set();
+
+  constructor() {
+    this.setupSignalingListener();
+  }
+
+  private notify() {
+    const snapshot = {
+      status: this.status,
+      callerName: this.callerName,
+      callerRole: this.callerRole,
+      localStream: this.localStream,
+      remoteStream: this.remoteStream,
+      isMuted: this.isMuted,
+      isVideoOff: this.isVideoOff,
+      activeTheme: this.activeTheme,
+      activeFilter: this.activeFilter,
+      partnerTouchingHeart: this.partnerTouchingHeart,
+    };
+    this.stateListeners.forEach((l) => l(snapshot));
+  }
+
+  public onStateChange(listener: CallStateListener): () => void {
+    this.stateListeners.add(listener);
+    listener({
+      status: this.status,
+      callerName: this.callerName,
+      callerRole: this.callerRole,
+      localStream: this.localStream,
+      remoteStream: this.remoteStream,
+      isMuted: this.isMuted,
+      isVideoOff: this.isVideoOff,
+      activeTheme: this.activeTheme,
+      activeFilter: this.activeFilter,
+      partnerTouchingHeart: this.partnerTouchingHeart,
+    });
+    return () => this.stateListeners.delete(listener);
+  }
+
+  public onReaction(listener: ReactionListener): () => void {
+    this.reactionListeners.add(listener);
+    return () => this.reactionListeners.delete(listener);
+  }
+
+  // Set up signaling subscriber over realtimeHub
+  private setupSignalingListener() {
+    if (this.unsubRealtime) return;
+    this.unsubRealtime = realtimeHub.subscribe((payload: RealtimePayload) => {
+      if (payload.type !== 'VIDEO_CALL_SIGNAL' || !payload.data) return;
+      this.handleIncomingSignal(payload.data as VideoSignalData, payload.senderRole, payload.senderName);
+    });
+  }
+
+  private async sendSignal(data: VideoSignalData, senderRole?: UserRole, senderName?: string) {
+    await realtimeHub.publish({
+      type: 'VIDEO_CALL_SIGNAL',
+      clientId: getClientId(),
+      senderRole,
+      senderName,
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  // Request user camera and microphone
+  public async getLocalMedia(videoWanted: boolean = true, audioWanted: boolean = true): Promise<MediaStream | null> {
+    if (this.localStream) return this.localStream;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: videoWanted
+          ? {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              facingMode: 'user',
+              frameRate: { ideal: 30 },
+            }
+          : false,
+        audio: audioWanted
+          ? {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            }
+          : false,
+      });
+      this.localStream = stream;
+      this.notify();
+      return stream;
+    } catch (err) {
+      console.warn('Could not acquire user camera/mic:', err);
+      return null;
+    }
+  }
+
+  // Start outgoing video call to partner
+  public async startCall(myRole: UserRole, myName: string, theme: RomanticThemeId = 'moonlight'): Promise<boolean> {
+    this.status = 'calling';
+    this.callerRole = myRole;
+    this.callerName = myName;
+    this.activeTheme = theme;
+    this.notify();
+
+    // Start soft romantic ambience during calling
+    romanticMusic.startRomanticAmbience(0.2);
+
+    // Get camera stream
+    await this.getLocalMedia(true, true);
+
+    // Broadcast call invitation to partner
+    await this.sendSignal(
+      {
+        signalType: 'call-invite',
+        callerRole: myRole,
+        callerName: myName,
+        themeId: theme,
+      },
+      myRole,
+      myName
+    );
+
+    return true;
+  }
+
+  // Accept incoming call from partner
+  public async acceptCall(myRole: UserRole, myName: string) {
+    romanticMusic.stopRinging();
+    romanticMusic.playConnectedChime();
+    romanticMusic.startRomanticAmbience(0.18);
+
+    this.status = 'connected';
+    this.notify();
+
+    await this.getLocalMedia(true, true);
+
+    // Notify caller we accepted
+    await this.sendSignal(
+      {
+        signalType: 'call-accept',
+        answererRole: myRole,
+      },
+      myRole,
+      myName
+    );
+
+    // Caller will receive 'call-accept' and initiate the WebRTC offer
+  }
+
+  // Decline incoming call
+  public async declineCall(myRole: UserRole) {
+    romanticMusic.stopRinging();
+    this.status = 'idle';
+    this.notify();
+
+    await this.sendSignal(
+      {
+        signalType: 'call-decline',
+        reason: 'declined',
+      },
+      myRole
+    );
+  }
+
+  // End call
+  public async endCall(notifyRemote: boolean = true) {
+    romanticMusic.stopRinging();
+    romanticMusic.stopRomanticAmbience();
+    romanticMusic.playHangupChime();
+
+    if (this.peerConnection) {
+      try {
+        this.peerConnection.close();
+      } catch {}
+      this.peerConnection = null;
+    }
+
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((t) => t.stop());
+      this.localStream = null;
+    }
+
+    this.remoteStream = null;
+    this.queuedCandidates = [];
+    this.status = 'idle';
+    this.partnerTouchingHeart = false;
+    this.notify();
+
+    if (notifyRemote) {
+      await this.sendSignal({ signalType: 'call-end' });
+    }
+  }
+
+  // Initialize WebRTC PeerConnection
+  private createPeerConnection(myRole?: UserRole): RTCPeerConnection {
+    if (this.peerConnection) {
+      try {
+        this.peerConnection.close();
+      } catch {}
+    }
+
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    this.peerConnection = pc;
+
+    // Attach local stream tracks
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => {
+        pc.addTrack(track, this.localStream!);
+      });
+    }
+
+    // Handle remote track arrival
+    pc.ontrack = (event) => {
+      if (event.streams && event.streams[0]) {
+        this.remoteStream = event.streams[0];
+        this.status = 'connected';
+        this.notify();
+      }
+    };
+
+    // Trickle ICE candidates to partner
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.sendSignal({
+          signalType: 'webrtc-ice',
+          candidate: event.candidate.toJSON(),
+        }, myRole);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        this.status = 'connected';
+        this.notify();
+      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        console.warn('WebRTC connection state:', pc.connectionState);
+      }
+    };
+
+    return pc;
+  }
+
+  // Create & send WebRTC Offer (Caller)
+  private async initiateWebRTCOffer(myRole?: UserRole) {
+    const pc = this.createPeerConnection(myRole);
+    try {
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+      await pc.setLocalDescription(offer);
+      await this.sendSignal({
+        signalType: 'webrtc-offer',
+        sdp: offer,
+      }, myRole);
+    } catch (e) {
+      console.error('Failed to create WebRTC offer:', e);
+    }
+  }
+
+  // Handle incoming WebRTC Offer & respond with Answer (Answerer)
+  private async handleWebRTCOffer(offerSdp: RTCSessionDescriptionInit, myRole?: UserRole) {
+    const pc = this.createPeerConnection(myRole);
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
+
+      // Process any early candidates received before remote description was ready
+      while (this.queuedCandidates.length > 0) {
+        const cand = this.queuedCandidates.shift();
+        if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand));
+      }
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      await this.sendSignal({
+        signalType: 'webrtc-answer',
+        sdp: answer,
+      }, myRole);
+    } catch (e) {
+      console.error('Failed to handle WebRTC offer:', e);
+    }
+  }
+
+  // Handle incoming WebRTC Answer (Caller)
+  private async handleWebRTCAnswer(answerSdp: RTCSessionDescriptionInit) {
+    if (!this.peerConnection) return;
+    try {
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
+      while (this.queuedCandidates.length > 0) {
+        const cand = this.queuedCandidates.shift();
+        if (cand) await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      }
+    } catch (e) {
+      console.error('Failed to set remote answer:', e);
+    }
+  }
+
+  // Handle incoming ICE Candidate
+  private async handleIceCandidate(candidate: RTCIceCandidateInit) {
+    if (this.peerConnection && this.peerConnection.remoteDescription) {
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('Failed to add ICE candidate:', e);
+      }
+    } else {
+      this.queuedCandidates.push(candidate);
+    }
+  }
+
+  // Process incoming signal packet
+  private async handleIncomingSignal(data: VideoSignalData, senderRole?: UserRole, senderName?: string) {
+    switch (data.signalType) {
+      case 'call-invite':
+        if (this.status === 'idle') {
+          this.status = 'incoming';
+          this.callerRole = data.callerRole || senderRole;
+          this.callerName = data.callerName || senderName || 'My Love';
+          if (data.themeId) this.activeTheme = data.themeId;
+          this.notify();
+          romanticMusic.startRinging();
+        }
+        break;
+
+      case 'call-accept':
+        if (this.status === 'calling') {
+          this.status = 'connected';
+          romanticMusic.playConnectedChime();
+          this.notify();
+          // Caller now kicks off the WebRTC offer
+          await this.initiateWebRTCOffer(this.callerRole);
+        }
+        break;
+
+      case 'call-decline':
+        if (this.status === 'calling') {
+          this.endCall(false);
+          alert(`${senderName || 'Your partner'} is unable to answer right now.`);
+        }
+        break;
+
+      case 'call-end':
+        this.endCall(false);
+        break;
+
+      case 'webrtc-offer':
+        if (data.sdp) {
+          await this.handleWebRTCOffer(data.sdp, senderRole);
+        }
+        break;
+
+      case 'webrtc-answer':
+        if (data.sdp) {
+          await this.handleWebRTCAnswer(data.sdp);
+        }
+        break;
+
+      case 'webrtc-ice':
+        if (data.candidate) {
+          await this.handleIceCandidate(data.candidate);
+        }
+        break;
+
+      case 'romantic-reaction':
+        if (data.emoji && typeof data.x === 'number' && typeof data.y === 'number') {
+          this.reactionListeners.forEach((l) =>
+            l({
+              id: data.reactionId || `r_${Date.now()}_${Math.random()}`,
+              emoji: data.emoji!,
+              x: data.x!,
+              y: data.y!,
+              senderRole,
+            })
+          );
+        }
+        break;
+
+      case 'touch-heart':
+        this.partnerTouchingHeart = Boolean(data.touchActive);
+        this.notify();
+        break;
+
+      case 'theme-sync':
+        if (data.themeId) this.activeTheme = data.themeId;
+        if (data.filterId) this.activeFilter = data.filterId;
+        this.notify();
+        break;
+    }
+  }
+
+  // Toggle Microphone
+  public toggleMute(): boolean {
+    if (!this.localStream) return this.isMuted;
+    this.isMuted = !this.isMuted;
+    this.localStream.getAudioTracks().forEach((track) => {
+      track.enabled = !this.isMuted;
+    });
+    this.notify();
+    return this.isMuted;
+  }
+
+  // Toggle Camera
+  public toggleVideo(): boolean {
+    if (!this.localStream) return this.isVideoOff;
+    this.isVideoOff = !this.isVideoOff;
+    this.localStream.getVideoTracks().forEach((track) => {
+      track.enabled = !this.isVideoOff;
+    });
+    this.notify();
+    return this.isVideoOff;
+  }
+
+  // Switch Theme (with optional sync to partner)
+  public setTheme(theme: RomanticThemeId, syncToPartner: boolean = true) {
+    this.activeTheme = theme;
+    this.notify();
+    if (syncToPartner) {
+      this.sendSignal({ signalType: 'theme-sync', themeId: theme });
+    }
+  }
+
+  // Switch Filter
+  public setFilter(filter: RomanticFilterId, syncToPartner: boolean = false) {
+    this.activeFilter = filter;
+    this.notify();
+    if (syncToPartner) {
+      this.sendSignal({ signalType: 'theme-sync', filterId: filter });
+    }
+  }
+
+  // Send interactive romantic reaction
+  public sendReaction(emoji: string, x: number = 50, y: number = 50, senderRole?: UserRole) {
+    const reactionId = `r_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    // Dispatch locally immediately
+    this.reactionListeners.forEach((l) => l({ id: reactionId, emoji, x, y, senderRole }));
+    // Broadcast to partner
+    this.sendSignal({
+      signalType: 'romantic-reaction',
+      reactionId,
+      emoji,
+      x,
+      y,
+    }, senderRole);
+  }
+
+  // Send "Hold Hands / Soul Touch Heart" state
+  public setTouchHeart(active: boolean, senderRole?: UserRole) {
+    this.sendSignal({
+      signalType: 'touch-heart',
+      touchActive: active,
+    }, senderRole);
+  }
+}
+
+export const videoCallService = new RomanticVideoCallService();

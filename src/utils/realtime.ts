@@ -15,7 +15,8 @@ export type RealtimeEventType =
   | 'WHEEL_SPIN'
   | 'QUIZ_UPDATE'
   | 'FLAMES_RUN'
-  | 'PHOTO_UPDATE';
+  | 'PHOTO_UPDATE'
+  | 'VIDEO_CALL_SIGNAL';
 
 export interface RealtimePayload {
   id?: string;

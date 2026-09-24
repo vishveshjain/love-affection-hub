@@ -14,9 +14,12 @@ import { ScratchCoupons } from './components/games/ScratchCoupons';
 import { AffectionWheel } from './components/games/AffectionWheel';
 import { CoupleQuiz } from './components/games/CoupleQuiz';
 import { MemoryWall } from './components/games/MemoryWall';
+import { RomanticVideoChat } from './components/video/RomanticVideoChat';
+import { IncomingCallModal } from './components/video/IncomingCallModal';
 import { soundFx } from './utils/audio';
 import {
   MessageCircle,
+  Video,
   Moon,
   StickyNote,
   Flame,
@@ -32,6 +35,7 @@ import {
 
 type GameTab =
   | 'chat'
+  | 'video'
   | 'dreams'
   | 'notes'
   | 'flames'
@@ -56,6 +60,12 @@ const MainContent: React.FC = () => {
   };
 
   const tabs: { id: GameTab; label: string; icon: React.ReactNode; badge?: string }[] = [
+    {
+      id: 'video',
+      label: 'Romantic Video Call',
+      icon: <Video className="w-4 h-4 text-rose-500 fill-rose-500" />,
+      badge: 'Live HD',
+    },
     {
       id: 'chat',
       label: 'Live Couple Chat',
@@ -110,6 +120,9 @@ const MainContent: React.FC = () => {
 
       {/* Onboarding / Setup Modal */}
       <OnboardingModal />
+
+      {/* Global Romantic Video Incoming Call Modal */}
+      <IncomingCallModal onAccept={() => setActiveTab('video')} />
 
       {/* Main Container */}
       <main className="relative z-10 flex-1 max-w-6xl mx-auto w-full px-2 sm:px-4 py-6 space-y-8">
@@ -193,7 +206,8 @@ const MainContent: React.FC = () => {
 
           {/* Active Tab View */}
           <div className="mt-4 transition-all duration-300">
-            {activeTab === 'chat' && <LiveCoupleChat />}
+            {activeTab === 'video' && <RomanticVideoChat />}
+            {activeTab === 'chat' && <LiveCoupleChat onStartVideoCall={() => setActiveTab('video')} />}
             {activeTab === 'dreams' && <DreamJournal />}
             {activeTab === 'notes' && <LoveNotesJourney />}
             {activeTab === 'flames' && <FlamesGame />}

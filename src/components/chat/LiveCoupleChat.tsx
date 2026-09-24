@@ -20,11 +20,16 @@ import {
   Copy,
   Check,
   Camera,
+  Video,
 } from 'lucide-react';
 
 const LOVE_EMOJIS = ['💖', '💋', '🥰', '🫂', '💍', '🌹', '💌', '✨', '🍓', '🧸', '🥺', '👑', '🍰', '🌸'];
 
-export const LiveCoupleChat: React.FC = () => {
+interface LiveCoupleChatProps {
+  onStartVideoCall?: () => void;
+}
+
+export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall }) => {
   const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, partnerRole, partnerOnline, updateProfilePhoto } = useCouple();
   const [messages, setMessages] = useState<ChatMessage[]>(loadChatMessages);
   const [inputText, setInputText] = useState('');
@@ -300,6 +305,19 @@ export const LiveCoupleChat: React.FC = () => {
               {roomKey}
             </span>
           </button>
+
+          {/* Romantic Video Call Launch Button */}
+          {onStartVideoCall && (
+            <button
+              type="button"
+              onClick={onStartVideoCall}
+              title="Launch Romantic Video Call Sanctuary"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-pink-500/25 transition active:scale-95"
+            >
+              <Video className="w-3.5 h-3.5 fill-white text-white" />
+              <span>Video Call</span>
+            </button>
+          )}
 
           {/* Love Buzz Button */}
           <button
