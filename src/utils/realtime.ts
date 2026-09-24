@@ -276,7 +276,7 @@ export class RealtimeService {
 
   private async pollRecentUpdates(topic: string) {
     try {
-      const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=30s`);
+      const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=10s`);
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n');

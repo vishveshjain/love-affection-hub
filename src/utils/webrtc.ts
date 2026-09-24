@@ -160,6 +160,8 @@ export interface VideoSignalData {
   themeId?: RomanticThemeId;
   filterId?: RomanticFilterId;
   reason?: string;
+  callId?: string;
+  sentAt?: number;
 }
 
 // Compress text with built-in browser deflate-raw to fit large SDP into a single message
@@ -198,10 +200,16 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.services.mozilla.com' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
   iceCandidatePoolSize: 10,
 };
@@ -235,6 +243,7 @@ class RomanticVideoCallService {
   private offerRetryTimer: any = null;
 
   public status: 'idle' | 'calling' | 'incoming' | 'connected' = 'idle';
+  public currentCallId: string | null = null;
   public myRole?: UserRole;
   public callerRole?: UserRole;
   public callerName?: string;
@@ -300,12 +309,17 @@ class RomanticVideoCallService {
 
   private async sendSignal(data: VideoSignalData, senderRole?: UserRole, senderName?: string) {
     const role = senderRole || this.myRole;
+    const signalDataWithMeta: VideoSignalData = {
+      ...data,
+      callId: data.callId || this.currentCallId || undefined,
+      sentAt: Date.now(),
+    };
     await realtimeHub.publish({
       type: 'VIDEO_CALL_SIGNAL',
       clientId: getClientId(),
       senderRole: role,
       senderName,
-      data,
+      data: signalDataWithMeta,
       timestamp: Date.now(),
     });
   }
@@ -386,8 +400,10 @@ class RomanticVideoCallService {
     return this.mediaPromise;
   }
 
-  // Start outgoing video call to partner
+  // Start outgoing video call to partner (sends call invitation immediately with 0ms delay)
   public async startCall(myRole: UserRole, myName: string, theme: RomanticThemeId = 'moonlight'): Promise<boolean> {
+    const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    this.currentCallId = callId;
     this.myRole = myRole;
     this.status = 'calling';
     this.callerRole = myRole;
@@ -398,25 +414,28 @@ class RomanticVideoCallService {
     // Start soft romantic ambience during calling
     romanticMusic.startRomanticAmbience(0.2);
 
-    // Ensure camera & mic stream is acquired
-    await this.getLocalMedia(true, true);
-
-    // Broadcast call invitation to partner
-    await this.sendSignal(
+    // 1. Broadcast call invitation to partner IMMEDIATELY (0ms delay for instant ringing)
+    this.sendSignal(
       {
         signalType: 'call-invite',
+        callId,
         callerRole: myRole,
         callerName: myName,
         themeId: theme,
       },
       myRole,
       myName
-    );
+    ).catch(() => {});
+
+    // 2. Pre-acquire local camera & mic in background while phone is ringing
+    this.getLocalMedia(true, true).catch((err) => {
+      console.warn('Caller background getLocalMedia:', err);
+    });
 
     return true;
   }
 
-  // Accept incoming call from partner
+  // Accept incoming call from partner (sends accept signal immediately with 0ms delay)
   public async acceptCall(myRole: UserRole, myName: string) {
     romanticMusic.stopRinging();
     romanticMusic.playConnectedChime();
@@ -426,29 +445,35 @@ class RomanticVideoCallService {
     this.status = 'connected';
     this.notify();
 
-    // 1. Acquire camera & mic FIRST so localStream is ready before answerer responds
-    await this.getLocalMedia(true, true);
-
-    // 2. Dispatch accept signal to notify caller to initiate WebRTC offer
-    await this.sendSignal(
+    // 1. Dispatch accept signal IMMEDIATELY to notify caller to initiate WebRTC offer
+    this.sendSignal(
       {
         signalType: 'call-accept',
+        callId: this.currentCallId || undefined,
         answererRole: myRole,
       },
       myRole,
       myName
-    );
+    ).catch(() => {});
+
+    // 2. Acquire camera & mic in parallel so answerer is ready when offer arrives
+    this.getLocalMedia(true, true).catch((err) => {
+      console.warn('Answerer background getLocalMedia:', err);
+    });
   }
 
   // Decline incoming call
   public async declineCall(myRole: UserRole) {
     romanticMusic.stopRinging();
+    const decliningCallId = this.currentCallId;
     this.status = 'idle';
+    this.currentCallId = null;
     this.notify();
 
     await this.sendSignal(
       {
         signalType: 'call-decline',
+        callId: decliningCallId || undefined,
         reason: 'declined',
       },
       myRole
@@ -458,9 +483,15 @@ class RomanticVideoCallService {
   // End call
   public async endCall(notifyRemote: boolean = true) {
     clearTimeout(this.offerRetryTimer);
+    this.offerRetryTimer = null;
     romanticMusic.stopRinging();
     romanticMusic.stopRomanticAmbience();
     romanticMusic.playHangupChime();
+
+    const endingCallId = this.currentCallId;
+    this.currentCallId = null;
+    this.mediaPromise = null;
+    this.sdpChunkBuffers.clear();
 
     if (this.peerConnection) {
       try {
@@ -481,11 +512,11 @@ class RomanticVideoCallService {
     this.notify();
 
     if (notifyRemote) {
-      // Send call-end signal to partner reliably
-      await this.sendSignal({ signalType: 'call-end' }, this.myRole);
+      // Send call-end signal to partner reliably with endingCallId
+      await this.sendSignal({ signalType: 'call-end', callId: endingCallId || undefined }, this.myRole);
       // Repeat after 150ms to ensure delivery over mobile networks
       setTimeout(() => {
-        this.sendSignal({ signalType: 'call-end' }, this.myRole).catch(() => {});
+        this.sendSignal({ signalType: 'call-end', callId: endingCallId || undefined }, this.myRole).catch(() => {});
       }, 150);
     }
   }
@@ -574,27 +605,32 @@ class RomanticVideoCallService {
       this.notify();
     };
 
-    // Trickle ICE candidates with light debounce to avoid 429
+    // Trickle ICE candidates with leading-edge batching window (flush every 80ms)
     let iceTimer: any = null;
     let pendingIce: RTCIceCandidateInit[] = [];
+
+    const flushIce = () => {
+      iceTimer = null;
+      if (pendingIce.length > 0) {
+        const batch = [...pendingIce];
+        pendingIce = [];
+        this.sendSignal(
+          {
+            signalType: 'webrtc-ice-batch',
+            callId: this.currentCallId || undefined,
+            candidates: batch,
+          },
+          this.myRole
+        );
+      }
+    };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         pendingIce.push(event.candidate.toJSON());
-        clearTimeout(iceTimer);
-        iceTimer = setTimeout(() => {
-          if (pendingIce.length > 0) {
-            const batch = [...pendingIce];
-            pendingIce = [];
-            this.sendSignal(
-              {
-                signalType: 'webrtc-ice-batch',
-                candidates: batch,
-              },
-              this.myRole
-            );
-          }
-        }, 150);
+        if (!iceTimer) {
+          iceTimer = setTimeout(flushIce, 80);
+        }
       }
     };
 
@@ -637,6 +673,7 @@ class RomanticVideoCallService {
         await this.sendSignal(
           {
             signalType: type,
+            callId: this.currentCallId || undefined,
             compressedSdp: compressed,
           },
           role
@@ -669,6 +706,7 @@ class RomanticVideoCallService {
       await this.sendSignal(
         {
           signalType: chunkSignalType,
+          callId: this.currentCallId || undefined,
           transmissionId,
           chunkIndex: i,
           totalChunks,
@@ -739,19 +777,19 @@ class RomanticVideoCallService {
       });
       await pc.setLocalDescription(offer);
 
-      // Wait briefly so initial STUN candidates are embedded directly into SDP offer
-      await this.waitForIceGathering(pc, 600);
+      // Wait briefly so initial STUN/TURN candidates are embedded directly into SDP offer
+      await this.waitForIceGathering(pc, 700);
 
       const finalOffer = pc.localDescription || offer;
       await this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole);
 
-      // Resilience against mobile packet drop: retry sending offer after 3.5s if no answer has arrived yet
+      // Resilience against mobile packet drop: retry sending offer after 3s if no answer has arrived yet
       this.offerRetryTimer = setTimeout(async () => {
         if (this.peerConnection === pc && !pc.remoteDescription && this.status === 'connected') {
-          console.log('No answer received yet after 3.5s, re-transmitting WebRTC offer to partner...');
+          console.log('No answer received yet after 3s, re-transmitting WebRTC offer to partner...');
           await this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole);
         }
-      }, 3500);
+      }, 3000);
     } catch (e) {
       console.error('Failed to create WebRTC offer:', e);
     }
@@ -772,8 +810,8 @@ class RomanticVideoCallService {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      // Wait briefly so initial STUN candidates are embedded directly into SDP answer
-      await this.waitForIceGathering(pc, 600);
+      // Wait briefly so initial STUN/TURN candidates are embedded directly into SDP answer
+      await this.waitForIceGathering(pc, 700);
 
       // Process any early candidates received before remote description was ready
       while (this.queuedCandidates.length > 0) {
@@ -824,18 +862,50 @@ class RomanticVideoCallService {
 
   // Process incoming signal packet
   private async handleIncomingSignal(data: VideoSignalData, senderRole?: UserRole, senderName?: string) {
-    switch (data.signalType) {
-      case 'call-invite':
-        if (this.status === 'idle') {
-          this.status = 'incoming';
-          this.callerRole = data.callerRole || senderRole;
-          this.callerName = data.callerName || senderName || 'My Love';
-          if (data.themeId) this.activeTheme = data.themeId;
-          this.notify();
-          romanticMusic.startRinging();
-        }
-        break;
+    if (!data || !data.signalType) return;
 
+    // 1. Stale packet rejection: Ignore any packet older than 15 seconds (prevents ntfy cache replay interference)
+    const now = Date.now();
+    if (data.sentAt && now - data.sentAt > 15000) {
+      console.log('Ignoring stale video signal older than 15s:', data.signalType);
+      return;
+    }
+
+    // 2. Call ID validation & Glare Resolution:
+    if (data.signalType === 'call-invite') {
+      if (this.status === 'idle') {
+        this.currentCallId = data.callId || `call_${Date.now()}`;
+        this.status = 'incoming';
+        this.callerRole = data.callerRole || senderRole;
+        this.callerName = data.callerName || senderName || 'My Love';
+        if (data.themeId) this.activeTheme = data.themeId;
+        this.notify();
+        romanticMusic.startRinging();
+        // Warm up user media in background while ringing so answering is instantaneous
+        this.getLocalMedia(true, true).catch(() => {});
+      } else if (this.status === 'calling' && data.callId && data.callId !== this.currentCallId) {
+        // Glare resolution: both partners tapped "Call" at the exact same moment
+        // Boyfriend caller takes precedence so both connect cleanly to the same call
+        if (senderRole === 'boyfriend') {
+          console.log('Resolving call glare: adopting boyfriend call invite');
+          this.currentCallId = data.callId;
+          this.status = 'incoming';
+          this.callerRole = 'boyfriend';
+          this.callerName = data.callerName || 'Vishvesh';
+          this.notify();
+          await this.acceptCall(this.myRole || 'girlfriend', this.callerName);
+        }
+      }
+      return;
+    }
+
+    // For in-call signals, ignore if they belong to a different or previous call session
+    if (this.currentCallId && data.callId && data.callId !== this.currentCallId) {
+      console.log(`Ignoring signal for mismatched call session ${data.callId} (active: ${this.currentCallId})`);
+      return;
+    }
+
+    switch (data.signalType) {
       case 'call-accept':
         if (this.status === 'calling') {
           this.status = 'connected';
@@ -854,7 +924,9 @@ class RomanticVideoCallService {
         break;
 
       case 'call-end':
-        this.endCall(false);
+        if (this.status !== 'idle') {
+          this.endCall(false);
+        }
         break;
 
       case 'webrtc-offer-chunk':
