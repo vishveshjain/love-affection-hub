@@ -14,7 +14,8 @@ export type RealtimeEventType =
   | 'MEMORY_UPDATE'
   | 'WHEEL_SPIN'
   | 'QUIZ_UPDATE'
-  | 'FLAMES_RUN';
+  | 'FLAMES_RUN'
+  | 'PHOTO_UPDATE';
 
 export interface RealtimePayload {
   id?: string;
@@ -224,7 +225,8 @@ export class RealtimeService {
                 payload.type === 'NOTE_UPDATE' ||
                 payload.type === 'JOURNEY_UPDATE' ||
                 payload.type === 'COUPON_UPDATE' ||
-                payload.type === 'MEMORY_UPDATE'
+                payload.type === 'MEMORY_UPDATE' ||
+                payload.type === 'PHOTO_UPDATE'
               ) {
                 payload.isHistorical = true;
                 this.notifyListeners(payload);

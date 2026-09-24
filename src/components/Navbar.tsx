@@ -64,6 +64,9 @@ export const Navbar: React.FC = () => {
                 : 'text-rose-700 hover:text-rose-900 hover:bg-rose-100/60'
             }`}
           >
+            <div className="w-4 h-4 rounded-full overflow-hidden border border-white/80 shrink-0 shadow-xs">
+              <img src={profile.girlfriendPhoto} alt={profile.girlfriendName} className="w-full h-full object-cover" />
+            </div>
             <span>👸 {profile.girlfriendName}</span>
           </button>
           <button
@@ -75,6 +78,9 @@ export const Navbar: React.FC = () => {
                 : 'text-blue-700 hover:text-blue-900 hover:bg-blue-100/60'
             }`}
           >
+            <div className="w-4 h-4 rounded-full overflow-hidden border border-white/80 shrink-0 shadow-xs">
+              <img src={profile.boyfriendPhoto} alt={profile.boyfriendName} className="w-full h-full object-cover" />
+            </div>
             <span>🤴 {profile.boyfriendName}</span>
           </button>
         </div>

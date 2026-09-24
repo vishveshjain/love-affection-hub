@@ -1,13 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useCouple } from '../context/CoupleContext';
 import { UserRole } from '../types';
 import { fileToDataUrl, DEFAULT_BOYFRIEND_AVATAR, DEFAULT_GIRLFRIEND_AVATAR } from '../utils/storage';
 import { soundFx } from '../utils/audio';
 import confetti from 'canvas-confetti';
-import { Heart, Sparkles, Upload, ArrowRight, UserCheck, Calendar } from 'lucide-react';
+import { Heart, Sparkles, Upload, ArrowRight, UserCheck, Calendar, Camera } from 'lucide-react';
 
 export const OnboardingModal: React.FC = () => {
-  const { profile, updateProfile, showOnboarding, setShowOnboarding } = useCouple();
+  const { profile, updateProfile, updateProfilePhoto, showOnboarding, setShowOnboarding } = useCouple();
 
   const [step, setStep] = useState<number>(1);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(profile.currentUserRole);
@@ -20,6 +20,15 @@ export const OnboardingModal: React.FC = () => {
   const [boyfriendPhoto, setBoyfriendPhoto] = useState(profile.boyfriendPhoto || DEFAULT_BOYFRIEND_AVATAR);
   const [girlfriendPhoto, setGirlfriendPhoto] = useState(profile.girlfriendPhoto || DEFAULT_GIRLFRIEND_AVATAR);
   const [relationshipStartDate, setRelationshipStartDate] = useState(profile.relationshipStartDate || '2026-08-25');
+  const [showPartnerUpload, setShowPartnerUpload] = useState(false);
+
+  useEffect(() => {
+    if (profile.boyfriendPhoto) setBoyfriendPhoto(profile.boyfriendPhoto);
+  }, [profile.boyfriendPhoto]);
+
+  useEffect(() => {
+    if (profile.girlfriendPhoto) setGirlfriendPhoto(profile.girlfriendPhoto);
+  }, [profile.girlfriendPhoto]);
 
   const bfFileInputRef = useRef<HTMLInputElement | null>(null);
   const gfFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -31,6 +40,7 @@ export const OnboardingModal: React.FC = () => {
       try {
         const dataUrl = await fileToDataUrl(e.target.files[0]);
         setBoyfriendPhoto(dataUrl);
+        updateProfilePhoto('boyfriend', dataUrl);
         soundFx.playPop(600, 0.08);
       } catch (err) {
         console.error('Error reading photo', err);
@@ -43,6 +53,7 @@ export const OnboardingModal: React.FC = () => {
       try {
         const dataUrl = await fileToDataUrl(e.target.files[0]);
         setGirlfriendPhoto(dataUrl);
+        updateProfilePhoto('girlfriend', dataUrl);
         soundFx.playPop(600, 0.08);
       } catch (err) {
         console.error('Error reading photo', err);
@@ -60,6 +71,11 @@ export const OnboardingModal: React.FC = () => {
       relationshipStartDate,
       isConfigured: true,
     });
+    if (currentUserRole === 'boyfriend') {
+      updateProfilePhoto('boyfriend', boyfriendPhoto);
+    } else {
+      updateProfilePhoto('girlfriend', girlfriendPhoto);
+    }
     setShowOnboarding(false);
     soundFx.playCelebration();
     confetti({
@@ -202,92 +218,134 @@ export const OnboardingModal: React.FC = () => {
           </div>
         )}
 
-        {/* STEP 2: Photo Uploads */}
+        {/* STEP 2: Photo Upload */}
         {step === 2 && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className="text-center">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-pink-600 bg-pink-50 rounded-full mb-2">
-                <Heart className="w-3.5 h-3.5 fill-pink-500" /> Couple Photos
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-rose-600 bg-rose-50 rounded-full mb-2">
+                <Camera className="w-3.5 h-3.5" /> Personal Profile Picture
               </span>
-              <h2 className="text-2xl font-bold text-slate-800">Add Your Photos</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Upload pictures of you and your sweetheart, or stick with cute avatars!
+              <h2 className="text-2xl font-bold text-slate-800">
+                Set Your Profile Picture
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                Upload your photo as <span className="font-semibold text-slate-700">{currentUserRole === 'boyfriend' ? boyfriendName : girlfriendName}</span>. Your sweetheart sets theirs on their device and it syncs live across both screens!
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              {/* Boyfriend Photo Card */}
-              <div className="flex flex-col items-center p-4 rounded-2xl border border-blue-200 bg-blue-50/40">
-                <div className="relative group w-24 h-24 rounded-full overflow-hidden border-3 border-blue-400 shadow-md mb-2">
-                  <img
-                    src={boyfriendPhoto}
-                    alt="Boyfriend"
-                    className="w-full h-full object-cover"
-                  />
-                  <div
-                    onClick={() => bfFileInputRef.current?.click()}
-                    className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-opacity text-white text-xs font-medium"
-                  >
-                    <Upload className="w-4 h-4 mb-1" />
-                    <span>Change</span>
-                  </div>
-                </div>
-                <span className="text-sm font-semibold text-slate-800 mb-2 truncate max-w-full">
-                  {boyfriendName}
-                </span>
-                <input
-                  type="file"
-                  ref={bfFileInputRef}
-                  onChange={handleBfPhotoUpload}
-                  accept="image/*"
-                  className="hidden"
+            {/* Primary Hero Card: Current User's Photo */}
+            <div
+              className={`p-5 rounded-2xl border-2 flex flex-col items-center text-center transition-all ${
+                currentUserRole === 'boyfriend'
+                  ? 'border-blue-400 bg-gradient-to-b from-blue-50/70 to-white shadow-md'
+                  : 'border-rose-400 bg-gradient-to-b from-rose-50/70 to-white shadow-md'
+              }`}
+            >
+              <div className="relative group w-28 h-28 rounded-full overflow-hidden border-4 border-white shadow-lg mb-3">
+                <img
+                  src={currentUserRole === 'boyfriend' ? boyfriendPhoto : girlfriendPhoto}
+                  alt={currentUserRole === 'boyfriend' ? boyfriendName : girlfriendName}
+                  className="w-full h-full object-cover"
                 />
-                <button
-                  type="button"
-                  onClick={() => bfFileInputRef.current?.click()}
-                  className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
+                <div
+                  onClick={() => (currentUserRole === 'boyfriend' ? bfFileInputRef : gfFileInputRef).current?.click()}
+                  className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-opacity text-white text-xs font-semibold gap-1"
                 >
-                  <Upload className="w-3 h-3" />
-                  <span>Upload</span>
-                </button>
+                  <Camera className="w-5 h-5" />
+                  <span>Choose Photo</span>
+                </div>
               </div>
 
-              {/* Girlfriend Photo Card */}
-              <div className="flex flex-col items-center p-4 rounded-2xl border border-rose-200 bg-rose-50/40">
-                <div className="relative group w-24 h-24 rounded-full overflow-hidden border-3 border-rose-400 shadow-md mb-2">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-extrabold text-slate-800 text-base">
+                  {currentUserRole === 'boyfriend' ? boyfriendName : girlfriendName}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white text-slate-700 border border-slate-200 shadow-xs">
+                  {currentUserRole === 'boyfriend' ? '🤴 You (Boyfriend)' : '👸 You (My Angel)'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 max-w-xs mb-3">
+                This photo reflects live on {currentUserRole === 'boyfriend' ? girlfriendName : boyfriendName}'s phone in real time for chats, kisses, and hugs!
+              </p>
+
+              <input
+                type="file"
+                ref={currentUserRole === 'boyfriend' ? bfFileInputRef : gfFileInputRef}
+                onChange={currentUserRole === 'boyfriend' ? handleBfPhotoUpload : handleGfPhotoUpload}
+                accept="image/*"
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={() => (currentUserRole === 'boyfriend' ? bfFileInputRef : gfFileInputRef).current?.click()}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white shadow-md transition-all active:scale-95 ${
+                  currentUserRole === 'boyfriend'
+                    ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
+                    : 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/25'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload My Photo 📷</span>
+              </button>
+            </div>
+
+            {/* Secondary Card: Partner's Photo Status */}
+            <div className="p-3.5 rounded-2xl bg-white border border-rose-100 shadow-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-rose-300 shadow-xs shrink-0">
                   <img
-                    src={girlfriendPhoto}
-                    alt="Girlfriend"
+                    src={currentUserRole === 'boyfriend' ? girlfriendPhoto : boyfriendPhoto}
+                    alt={currentUserRole === 'boyfriend' ? girlfriendName : boyfriendName}
                     className="w-full h-full object-cover"
                   />
-                  <div
-                    onClick={() => gfFileInputRef.current?.click()}
-                    className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-opacity text-white text-xs font-medium"
-                  >
-                    <Upload className="w-4 h-4 mb-1" />
-                    <span>Change</span>
-                  </div>
                 </div>
-                <span className="text-sm font-semibold text-slate-800 mb-2 truncate max-w-full">
-                  {girlfriendName}
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="font-bold text-slate-800 text-xs sm:text-sm">
+                      {currentUserRole === 'boyfriend' ? girlfriendName : boyfriendName}
+                    </h4>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-rose-50 text-rose-600 font-semibold">
+                      {currentUserRole === 'boyfriend' ? '👸 Partner' : '🤴 Partner'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    ✨ Managed by {currentUserRole === 'boyfriend' ? girlfriendName : boyfriendName} on their phone &amp; synced live.
+                  </p>
+                </div>
+              </div>
+
+              {/* Optional override toggle */}
+              <button
+                type="button"
+                onClick={() => setShowPartnerUpload(!showPartnerUpload)}
+                className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 text-[11px] font-medium shrink-0 transition"
+              >
+                {showPartnerUpload ? 'Hide' : 'Set here too'}
+              </button>
+            </div>
+
+            {showPartnerUpload && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2 animate-fade-in">
+                <span className="text-xs text-slate-600">
+                  Select a photo for {currentUserRole === 'boyfriend' ? girlfriendName : boyfriendName}:
                 </span>
                 <input
                   type="file"
-                  ref={gfFileInputRef}
-                  onChange={handleGfPhotoUpload}
+                  ref={currentUserRole === 'boyfriend' ? gfFileInputRef : bfFileInputRef}
+                  onChange={currentUserRole === 'boyfriend' ? handleGfPhotoUpload : handleBfPhotoUpload}
                   accept="image/*"
                   className="hidden"
                 />
                 <button
                   type="button"
-                  onClick={() => gfFileInputRef.current?.click()}
-                  className="flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition"
+                  onClick={() => (currentUserRole === 'boyfriend' ? gfFileInputRef : bfFileInputRef).current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-xs font-semibold hover:bg-slate-800 transition"
                 >
-                  <Upload className="w-3 h-3" />
-                  <span>Upload</span>
+                  Browse File
                 </button>
               </div>
-            </div>
+            )}
 
             <div className="flex gap-3">
               <button

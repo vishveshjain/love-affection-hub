@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useCouple } from '../context/CoupleContext';
-import { Heart, Sparkles, X, Smile, Star } from 'lucide-react';
+import { Heart, Sparkles, X, Smile, Star, Camera } from 'lucide-react';
+import { fileToDataUrl } from '../utils/storage';
 
 const MOOD_OPTIONS = [
   'Totally smitten 🥰',
@@ -16,6 +17,7 @@ export const AffectionStage: React.FC = () => {
   const {
     profile,
     updateProfile,
+    updateProfilePhoto,
     actionState,
     dismissAction,
     stats,
@@ -27,6 +29,31 @@ export const AffectionStage: React.FC = () => {
   const [editingBfMood, setEditingBfMood] = useState(false);
   const [editingGfMood, setEditingGfMood] = useState(false);
   const [lastKissTarget, setLastKissTarget] = useState<'boyfriend' | 'girlfriend' | null>(null);
+
+  const bfPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const gfPhotoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleBfPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const dataUrl = await fileToDataUrl(e.target.files[0]);
+        updateProfilePhoto('boyfriend', dataUrl);
+      } catch (err) {
+        console.error('Error updating boyfriend photo', err);
+      }
+    }
+  };
+
+  const handleGfPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const dataUrl = await fileToDataUrl(e.target.files[0]);
+        updateProfilePhoto('girlfriend', dataUrl);
+      } catch (err) {
+        console.error('Error updating girlfriend photo', err);
+      }
+    }
+  };
 
   // When a kiss action triggers, track the receiver to show lipstick mark
   React.useEffect(() => {
@@ -166,9 +193,14 @@ export const AffectionStage: React.FC = () => {
 
             {/* Boyfriend Photo Frame */}
             <div
+              onClick={() => {
+                if (profile.currentUserRole === 'boyfriend') {
+                  bfPhotoInputRef.current?.click();
+                }
+              }}
               className={`relative w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-4 transition-all duration-300 shadow-xl bg-white ${
                 profile.currentUserRole === 'boyfriend'
-                  ? 'border-blue-500 ring-4 ring-blue-300/60'
+                  ? 'border-blue-500 ring-4 ring-blue-300/60 cursor-pointer group'
                   : 'border-slate-300 hover:border-blue-400'
               } ${lastKissTarget === 'boyfriend' && isKissing ? 'ring-8 ring-rose-400 animate-bounce' : ''}`}
             >
@@ -177,6 +209,14 @@ export const AffectionStage: React.FC = () => {
                 alt={profile.boyfriendName}
                 className="w-full h-full object-cover"
               />
+
+              {/* Camera hover badge if current user is boyfriend */}
+              {profile.currentUserRole === 'boyfriend' && (
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white text-xs font-bold gap-1 pointer-events-none">
+                  <Camera className="w-5 h-5 text-white animate-pulse" />
+                  <span>Change Photo</span>
+                </div>
+              )}
 
               {/* Lipstick Kiss Stamp when kissed! */}
               {lastKissTarget === 'boyfriend' && (
@@ -191,8 +231,23 @@ export const AffectionStage: React.FC = () => {
               )}
             </div>
 
+            {/* Direct Camera button on avatar ring for Boyfriend */}
+            {profile.currentUserRole === 'boyfriend' && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  bfPhotoInputRef.current?.click();
+                }}
+                title="Upload my profile picture"
+                className="absolute bottom-0 right-2 z-20 p-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg border-2 border-white hover:scale-110 active:scale-95 transition"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* Crown emoji on Boyfriend */}
-            <span className="absolute -bottom-2 right-2 text-2xl filter drop-shadow">
+            <span className="absolute -bottom-2 left-2 text-2xl filter drop-shadow">
               🤴
             </span>
 
@@ -264,6 +319,30 @@ export const AffectionStage: React.FC = () => {
               </button>
             )}
           </div>
+
+          {/* Change My Photo Button or Sync Status */}
+          <input
+            type="file"
+            ref={bfPhotoInputRef}
+            onChange={handleBfPhotoUpload}
+            accept="image/*"
+            className="hidden"
+          />
+          {profile.currentUserRole === 'boyfriend' ? (
+            <button
+              type="button"
+              onClick={() => bfPhotoInputRef.current?.click()}
+              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-[11px] font-bold transition shadow-xs active:scale-95"
+            >
+              <Camera className="w-3 h-3 text-blue-600" />
+              <span>Change My Photo 📷</span>
+            </button>
+          ) : (
+            <div className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block animate-pulse" />
+              <span>Live synced from {profile.boyfriendName}</span>
+            </div>
+          )}
         </div>
 
         {/* ================= CENTER LOVE BRIDGE & STATS ================= */}
@@ -324,9 +403,14 @@ export const AffectionStage: React.FC = () => {
 
             {/* Girlfriend Photo Frame */}
             <div
+              onClick={() => {
+                if (profile.currentUserRole === 'girlfriend') {
+                  gfPhotoInputRef.current?.click();
+                }
+              }}
               className={`relative w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden border-4 transition-all duration-300 shadow-xl bg-white ${
                 profile.currentUserRole === 'girlfriend'
-                  ? 'border-rose-500 ring-4 ring-rose-300/60'
+                  ? 'border-rose-500 ring-4 ring-rose-300/60 cursor-pointer group'
                   : 'border-slate-300 hover:border-rose-400'
               } ${lastKissTarget === 'girlfriend' && isKissing ? 'ring-8 ring-rose-400 animate-bounce' : ''}`}
             >
@@ -335,6 +419,14 @@ export const AffectionStage: React.FC = () => {
                 alt={profile.girlfriendName}
                 className="w-full h-full object-cover"
               />
+
+              {/* Camera hover badge if current user is girlfriend */}
+              {profile.currentUserRole === 'girlfriend' && (
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white text-xs font-bold gap-1 pointer-events-none">
+                  <Camera className="w-5 h-5 text-white animate-pulse" />
+                  <span>Change Photo</span>
+                </div>
+              )}
 
               {/* Lipstick Kiss Stamp when kissed! */}
               {lastKissTarget === 'girlfriend' && (
@@ -349,8 +441,23 @@ export const AffectionStage: React.FC = () => {
               )}
             </div>
 
+            {/* Direct Camera button on avatar ring for Girlfriend */}
+            {profile.currentUserRole === 'girlfriend' && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  gfPhotoInputRef.current?.click();
+                }}
+                title="Upload my profile picture"
+                className="absolute bottom-0 right-2 z-20 p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg border-2 border-white hover:scale-110 active:scale-95 transition"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* Tiara / Angel wings emoji on Girlfriend */}
-            <span className="absolute -bottom-2 right-2 text-2xl filter drop-shadow">
+            <span className="absolute -bottom-2 left-2 text-2xl filter drop-shadow">
               👼
             </span>
 
@@ -446,6 +553,30 @@ export const AffectionStage: React.FC = () => {
               </button>
             )}
           </div>
+
+          {/* Change My Photo Button or Sync Status */}
+          <input
+            type="file"
+            ref={gfPhotoInputRef}
+            onChange={handleGfPhotoUpload}
+            accept="image/*"
+            className="hidden"
+          />
+          {profile.currentUserRole === 'girlfriend' ? (
+            <button
+              type="button"
+              onClick={() => gfPhotoInputRef.current?.click()}
+              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-[11px] font-bold transition shadow-xs active:scale-95"
+            >
+              <Camera className="w-3 h-3 text-rose-600" />
+              <span>Change My Photo 📷</span>
+            </button>
+          ) : (
+            <div className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block animate-pulse" />
+              <span>Live synced from {profile.girlfriendName}</span>
+            </div>
+          )}
         </div>
       </div>
     </section>

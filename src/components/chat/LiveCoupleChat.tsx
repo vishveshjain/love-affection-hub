@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCouple } from '../../context/CoupleContext';
 import { ChatMessage } from '../../types';
-import { loadChatMessages, saveChatMessages } from '../../utils/storage';
+import { loadChatMessages, saveChatMessages, fileToDataUrl } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getRoomKey, setRoomKey, getClientId, RealtimePayload } from '../../utils/realtime';
 import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
@@ -19,12 +19,13 @@ import {
   WifiOff,
   Copy,
   Check,
+  Camera,
 } from 'lucide-react';
 
 const LOVE_EMOJIS = ['💖', '💋', '🥰', '🫂', '💍', '🌹', '💌', '✨', '🍓', '🧸', '🥺', '👑', '🍰', '🌸'];
 
 export const LiveCoupleChat: React.FC = () => {
-  const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, partnerRole, partnerOnline } = useCouple();
+  const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, partnerRole, partnerOnline, updateProfilePhoto } = useCouple();
   const [messages, setMessages] = useState<ChatMessage[]>(loadChatMessages);
   const [inputText, setInputText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -33,8 +34,19 @@ export const LiveCoupleChat: React.FC = () => {
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [tempRoomKey, setTempRoomKey] = useState(getRoomKey());
   const [copied, setCopied] = useState(false);
-
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatPhotoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleChatPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const dataUrl = await fileToDataUrl(e.target.files[0]);
+        updateProfilePhoto(profile.currentUserRole, dataUrl);
+      } catch (err) {
+        console.error('Error updating profile photo from chat', err);
+      }
+    }
+  };
 
   // Initialize and subscribe to real-time internet connection
   useEffect(() => {
@@ -251,6 +263,27 @@ export const LiveCoupleChat: React.FC = () => {
 
         {/* Room Key & Love Buzz Action Buttons */}
         <div className="flex items-center gap-2">
+          {/* Quick Profile Picture Changer for Current User */}
+          <input
+            type="file"
+            ref={chatPhotoInputRef}
+            onChange={handleChatPhotoUpload}
+            accept="image/*"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => chatPhotoInputRef.current?.click()}
+            title={`Update your photo (${currentUserName})`}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-700 hover:text-rose-600 text-xs font-semibold shadow-xs hover:border-rose-300 transition active:scale-95"
+          >
+            <div className="w-4 h-4 rounded-full overflow-hidden border border-rose-400 shrink-0">
+              <img src={currentUserPhoto} alt={currentUserName} className="w-full h-full object-cover" />
+            </div>
+            <span className="hidden sm:inline">My Photo</span>
+            <Camera className="w-3 h-3 text-rose-500" />
+          </button>
+
           {/* Secret Room Key Pill */}
           <button
             type="button"

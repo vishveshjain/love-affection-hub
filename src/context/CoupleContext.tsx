@@ -43,6 +43,7 @@ interface CoupleContextType {
   dismissAction: () => void;
   setShowOnboarding: (show: boolean) => void;
   updateCoupons: (coupons: ScratchCoupon[]) => void;
+  updateProfilePhoto: (role: UserRole, photoDataUrl: string) => void;
   broadcastMoodChange: (role: 'boyfriend' | 'girlfriend', mood: string) => void;
   broadcastCouponChange: (coupons: ScratchCoupon[]) => void;
   resetAllData: () => void;
@@ -104,6 +105,33 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
       }
       return next;
+    });
+  };
+
+  const updateProfilePhoto = (role: UserRole, photoDataUrl: string) => {
+    setProfile((prev) => ({
+      ...prev,
+      [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
+    }));
+    saveCloudData({
+      [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photoDataUrl,
+    });
+    realtimeHub.publish({
+      type: 'PHOTO_UPDATE',
+      clientId: getClientId(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+      data: {
+        role,
+        photo: photoDataUrl,
+      },
+      timestamp: Date.now(),
+    });
+    soundFx.playCelebration();
+    confetti({
+      particleCount: 50,
+      spread: 70,
+      origin: { y: 0.5 },
     });
   };
 
@@ -352,6 +380,20 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             window.dispatchEvent(new CustomEvent('love_app_memories_sync', { detail: payload.data.memories }));
           }
         }
+      } else if (payload.type === 'PHOTO_UPDATE') {
+        if (payload.data?.role && payload.data?.photo) {
+          const { role, photo } = payload.data;
+          setProfile((prev) => ({
+            ...prev,
+            [role === 'boyfriend' ? 'boyfriendPhoto' : 'girlfriendPhoto']: photo,
+          }));
+          soundFx.playCelebration();
+          confetti({
+            particleCount: 45,
+            spread: 60,
+            origin: { y: 0.5 },
+          });
+        }
       }
     });
 
@@ -387,6 +429,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         partnerRole,
         partnerOnline,
         updateProfile,
+        updateProfilePhoto,
         switchCurrentUserRole,
         triggerAction,
         dismissAction,
