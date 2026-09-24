@@ -72,12 +72,24 @@ export const OnboardingModal: React.FC = () => {
     };
 
     if (isBf) {
-      if (isCustomPhoto(boyfriendPhoto) && boyfriendPhoto !== profile.boyfriendPhoto) {
+      if (isCustomPhoto(boyfriendPhoto)) {
+        profileUpdates.boyfriendPhoto = boyfriendPhoto;
         updateProfilePhoto('boyfriend', boyfriendPhoto);
       }
-    } else {
+      // ONLY set girlfriendPhoto if the user explicitly uploaded a custom photo for her
       if (isCustomPhoto(girlfriendPhoto) && girlfriendPhoto !== profile.girlfriendPhoto) {
+        profileUpdates.girlfriendPhoto = girlfriendPhoto;
         updateProfilePhoto('girlfriend', girlfriendPhoto);
+      }
+    } else {
+      if (isCustomPhoto(girlfriendPhoto)) {
+        profileUpdates.girlfriendPhoto = girlfriendPhoto;
+        updateProfilePhoto('girlfriend', girlfriendPhoto);
+      }
+      // ONLY set boyfriendPhoto if the user explicitly uploaded a custom photo for him
+      if (isCustomPhoto(boyfriendPhoto) && boyfriendPhoto !== profile.boyfriendPhoto) {
+        profileUpdates.boyfriendPhoto = boyfriendPhoto;
+        updateProfilePhoto('boyfriend', boyfriendPhoto);
       }
     }
 

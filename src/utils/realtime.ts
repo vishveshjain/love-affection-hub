@@ -15,9 +15,7 @@ export type RealtimeEventType =
   | 'WHEEL_SPIN'
   | 'QUIZ_UPDATE'
   | 'FLAMES_RUN'
-  | 'PHOTO_UPDATE'
-  | 'PHOTO_CHUNK'
-  | 'PHOTO_REQUEST';
+  | 'PHOTO_UPDATE';
 
 export interface RealtimePayload {
   id?: string;
@@ -220,7 +218,7 @@ export class RealtimeService {
               
               if (payload.id) this.seenIds.add(payload.id);
 
-              // Dispatch historical state (Chat, Dreams, Notes, Milestones, Coupons, Memories, Photos)
+              // Dispatch historical state (Chat, Dreams, Notes, Milestones, Coupons, Memories)
               if (
                 payload.type === 'CHAT_MESSAGE' ||
                 payload.type === 'DREAM_UPDATE' ||
@@ -228,8 +226,7 @@ export class RealtimeService {
                 payload.type === 'JOURNEY_UPDATE' ||
                 payload.type === 'COUPON_UPDATE' ||
                 payload.type === 'MEMORY_UPDATE' ||
-                payload.type === 'PHOTO_UPDATE' ||
-                payload.type === 'PHOTO_CHUNK'
+                payload.type === 'PHOTO_UPDATE'
               ) {
                 payload.isHistorical = true;
                 this.notifyListeners(payload);
@@ -311,10 +308,12 @@ export class RealtimeService {
       }
     }
 
-    // Any valid payload from partner confirms they are online!
-    this.lastPartnerTimestamp = Date.now();
-    if (payload.senderName) this.partnerName = payload.senderName;
-    this.notifyPresence(true, this.partnerName);
+    // Handle heartbeat presence
+    if (payload.type === 'HEARTBEAT') {
+      this.lastPartnerTimestamp = Date.now();
+      if (payload.senderName) this.partnerName = payload.senderName;
+      this.notifyPresence(true, this.partnerName);
+    }
 
     this.notifyListeners(payload);
   }
@@ -365,52 +364,6 @@ export class RealtimeService {
     );
 
     return results.some((r) => r.status === 'fulfilled' && (r.value as Response).ok);
-  }
-
-  public async publishPhotoInChunks(
-    role: 'boyfriend' | 'girlfriend',
-    photoDataUrl: string,
-    updatedAt: number = Date.now()
-  ): Promise<boolean> {
-    const CHUNK_SIZE = 2400;
-    const totalChunks = Math.ceil(photoDataUrl.length / CHUNK_SIZE);
-    const photoId = `photo_${role}_${updatedAt}`;
-
-    let success = true;
-    for (let i = 0; i < totalChunks; i++) {
-      const chunkData = photoDataUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      const res = await this.publish({
-        id: `${photoId}_chunk_${i}`,
-        type: 'PHOTO_CHUNK',
-        clientId: getClientId(),
-        senderRole: role,
-        data: {
-          photoId,
-          role,
-          chunkIndex: i,
-          totalChunks,
-          chunkData,
-          updatedAt,
-        },
-        timestamp: updatedAt,
-      });
-      if (!res) success = false;
-      if (i < totalChunks - 1) {
-        await new Promise((r) => setTimeout(r, 20));
-      }
-    }
-    return success;
-  }
-
-  public async requestPartnerPhotos(): Promise<boolean> {
-    return this.publish({
-      type: 'PHOTO_REQUEST',
-      clientId: getClientId(),
-      senderRole: this.currentRole,
-      senderName: this.currentUserName,
-      data: {},
-      timestamp: Date.now(),
-    });
   }
 
   public subscribe(callback: (payload: RealtimePayload) => void) {

@@ -412,13 +412,14 @@ export function saveChatMessages(messages: ChatMessage[]): void {
   }
 }
 
-// Convert uploaded file to high-definition, crystal-clear compressed base64 Data URL
-// Resizes camera/phone photos down to razor-sharp 280px retina quality (~14-18KB),
-// perfectly calibrated for fast real-time chunked streaming over the broker.
+// Convert uploaded file to high-resolution, crisp, Retina-ready base64 Data URL (~380x380 px, ~18-24KB)
+// Balanced for razor-sharp clarity on mobile & desktop Retina displays for the 176px Affection Stage,
+// while storing safely in ExtendsClass Cloud Storage without blurriness or pixelation.
 export function fileToDataUrl(
   file: File,
-  maxDimension: number = 280,
-  initialQuality: number = 0.82
+  maxDimension: number = 380,
+  initialQuality: number = 0.84,
+  maxChars: number = 28000
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -438,9 +439,8 @@ export function fileToDataUrl(
           let q = initialQuality;
           let bestResult = '';
 
-          // Target max base64 length: 24,000 chars (~18KB binary).
-          // Split into ~8 chunks of 2400 chars, streamed across real-time broker in <150ms!
-          // 280px with high smoothing quality gives ultra crystal-clear, razor sharp rendering on 2x/3x retina mobile screens.
+          // High-resolution avatar processing: keeps physical pixel density high (360-380px)
+          // for razor-sharp appearance in both the 176px Affection Stage and chat bubbles.
           for (let attempt = 0; attempt < 5; attempt++) {
             const canvas = document.createElement('canvas');
             let width = img.width;
@@ -469,16 +469,11 @@ export function fileToDataUrl(
 
             const candidate = canvas.toDataURL('image/jpeg', q);
             bestResult = candidate;
-            if (candidate.length <= 24000) {
+            if (candidate.length <= maxChars) {
               break;
             }
-            // If slightly too large, reduce quality gradually first before reducing resolution
-            if (q > 0.68) {
-              q = Math.max(0.68, q - 0.08);
-            } else {
-              dim = Math.round(dim * 0.88);
-              q = 0.78;
-            }
+            dim = Math.round(dim * 0.90);
+            q = Math.max(0.68, q - 0.05);
           }
 
           resolve(bestResult || rawResult);
@@ -491,3 +486,4 @@ export function fileToDataUrl(
     reader.readAsDataURL(file);
   });
 }
+
