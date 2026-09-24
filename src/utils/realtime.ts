@@ -35,11 +35,8 @@ const DEFAULT_ROOM_KEY = 'vishvesh-laura-love-nest-2026';
 const ROOM_STORAGE_KEY = 'love_app_realtime_room_key_v1';
 const CLIENT_STORAGE_KEY = 'love_app_client_id_v2';
 
-// Primary and fallback high-availability servers that support CORS and worldwide access
-const SERVERS = [
-  'https://ntfy.adminforge.de',
-  'https://ntfy.tedomum.fr',
-];
+// Primary authoritative realtime server that supports CORS, SSE, and worldwide access
+const NTFY_SERVER = 'https://ntfy.adminforge.de';
 
 const MEDIA_SERVERS = [
   'https://ntfy.envs.net',
@@ -89,7 +86,6 @@ export function getTopicName(roomKey: string): string {
 export class RealtimeService {
   private eventSource: EventSource | null = null;
   private currentRoomKey: string = '';
-  private currentServerIndex: number = 0;
   private listeners: ((payload: RealtimePayload) => void)[] = [];
   private statusListeners: ((isConnected: boolean) => void)[] = [];
   private presenceListeners: ((isOnline: boolean, partnerName?: string) => void)[] = [];
@@ -140,10 +136,6 @@ export class RealtimeService {
     this.currentUserName = name;
   }
 
-  private get activeServer(): string {
-    return SERVERS[this.currentServerIndex % SERVERS.length];
-  }
-
   public connect(roomKey: string) {
     if (this.eventSource && this.currentRoomKey === roomKey) {
       return;
@@ -159,10 +151,10 @@ export class RealtimeService {
     // Connect SSE
     this.initEventSource(topic);
 
-    // Fallback poll every 5 seconds for mobile network resilience
+    // Fallback poll every 4 seconds for mobile network resilience
     this.fallbackPollTimer = setInterval(() => {
       this.pollRecentUpdates(topic);
-    }, 5000);
+    }, 4000);
 
     // Start sending heartbeat to signal presence
     this.startHeartbeat();
@@ -174,7 +166,7 @@ export class RealtimeService {
         this.eventSource.close();
       }
 
-      const sseUrl = `${this.activeServer}/${topic}/sse`;
+      const sseUrl = `${NTFY_SERVER}/${topic}/sse`;
       this.eventSource = new EventSource(sseUrl);
 
       this.eventSource.onopen = () => {
@@ -200,14 +192,13 @@ export class RealtimeService {
       this.eventSource.onerror = () => {
         this.isConnected = false;
         this.notifyStatus(false);
-        // Switch to fallback server on error
-        this.currentServerIndex = (this.currentServerIndex + 1) % SERVERS.length;
+        // Reconnect to the same authoritative server
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => {
           if (this.currentRoomKey) {
             this.initEventSource(topic);
           }
-        }, 2500);
+        }, 2000);
       };
     } catch (e) {
       console.error('Failed to init EventSource:', e);
@@ -244,7 +235,7 @@ export class RealtimeService {
 
   private async fetchRecentHistory(topic: string) {
     try {
-      const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=all`);
+      const res = await fetch(`${NTFY_SERVER}/${topic}/json?poll=1&since=all`);
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n');
@@ -297,7 +288,7 @@ export class RealtimeService {
 
   private async pollRecentUpdates(topic: string) {
     try {
-      const res = await fetch(`${this.activeServer}/${topic}/json?poll=1&since=10s`);
+      const res = await fetch(`${NTFY_SERVER}/${topic}/json?poll=1&since=10s`);
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n');
@@ -392,33 +383,21 @@ export class RealtimeService {
     const topic = getTopicName(this.currentRoomKey || getRoomKey());
     const bodyStr = JSON.stringify(fullPayload);
 
-    // If it's a chunk, send ONLY to activeServer to avoid multiplying network traffic and rate limits
-    if (fullPayload.type === 'PHOTO_UPDATE' && fullPayload.data?.chunk) {
+    // Publish to the authoritative NTFY server with automatic retry on transient mobile errors
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const targetServer = this.activeServer || SERVERS[0];
-        const res = await fetch(`${targetServer}/${topic}`, {
+        const res = await fetch(`${NTFY_SERVER}/${topic}`, {
           method: 'POST',
           body: bodyStr,
           keepalive: true,
         });
-        return res.ok;
+        if (res.ok) return true;
       } catch {
-        return false;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 200));
       }
     }
 
-    // Broadcast to ALL servers simultaneously with keepalive to guarantee delivery on mobile/tab-switch
-    const results = await Promise.allSettled(
-      SERVERS.map((server) =>
-        fetch(`${server}/${topic}`, {
-          method: 'POST',
-          body: bodyStr,
-          keepalive: true,
-        })
-      )
-    );
-
-    return results.some((r) => r.status === 'fulfilled' && (r.value as Response).ok);
+    return false;
   }
 
   public subscribe(callback: (payload: RealtimePayload) => void) {
