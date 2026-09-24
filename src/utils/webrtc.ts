@@ -453,7 +453,7 @@ class RomanticVideoCallService {
     return true;
   }
 
-  // Accept incoming call from partner (sends accept signal immediately with awaited dispatch + confirmations)
+  // Accept incoming call from partner (sends accept signal with awaited reliable dispatch)
   public async acceptCall(myRole: UserRole, myName: string) {
     romanticMusic.stopRinging();
     romanticMusic.playConnectedChime();
@@ -469,27 +469,16 @@ class RomanticVideoCallService {
       answererRole: myRole,
     };
 
-    // 1. Dispatch accept signal IMMEDIATELY with await so Android Chrome doesn't abort it before component unmount
+    // Dispatch accept signal with await + keepalive so Android Chrome can't abort it during component unmount.
+    // If this single packet is lost, the caller's call-invite retry loop will trigger the auto-healing echo
+    // (answerer re-sends call-accept when receiving a repeated call-invite while already connected).
     try {
       await this.sendSignal(acceptPayload, myRole, myName);
     } catch (e) {
-      console.warn('acceptCall initial send error:', e);
+      console.warn('acceptCall send error:', e);
     }
 
-    // 2. Re-send confirmation after 250ms and 600ms to guarantee delivery across mobile networks
-    setTimeout(() => {
-      if (this.status === 'connected') {
-        this.sendSignal(acceptPayload, myRole, myName).catch(() => {});
-      }
-    }, 250);
-
-    setTimeout(() => {
-      if (this.status === 'connected') {
-        this.sendSignal(acceptPayload, myRole, myName).catch(() => {});
-      }
-    }, 600);
-
-    // 3. Acquire camera & mic in parallel so answerer is ready when offer arrives
+    // Acquire camera & mic in parallel so answerer is ready when offer arrives
     this.getLocalMedia(true, true).catch((err) => {
       console.warn('Answerer background getLocalMedia:', err);
     });
@@ -803,6 +792,22 @@ class RomanticVideoCallService {
   // Create & send WebRTC Offer (Caller)
   private async initiateWebRTCOffer(myRole?: UserRole) {
     clearTimeout(this.offerRetryTimer);
+
+    // If a PeerConnection already exists with a pending or active offer, don't destroy it.
+    // Just re-send the existing offer. This prevents the race where duplicate call-accept
+    // signals cause repeated PC destruction.
+    if (
+      this.peerConnection &&
+      this.peerConnection.localDescription &&
+      (this.peerConnection.signalingState === 'have-local-offer' || this.peerConnection.signalingState === 'stable') &&
+      this.peerConnection.connectionState !== 'failed' &&
+      this.peerConnection.connectionState !== 'closed'
+    ) {
+      console.log('PC already has a local offer/stable state, re-sending existing offer instead of recreating');
+      await this.sendSdpSignal('webrtc-offer', this.peerConnection.localDescription, this.myRole || myRole);
+      return;
+    }
+
     if (!this.localStream) {
       await this.getLocalMedia(true, true);
     }
@@ -840,9 +845,16 @@ class RomanticVideoCallService {
   private async handleWebRTCOffer(offerSdp: RTCSessionDescriptionInit, senderRole?: UserRole) {
     clearTimeout(this.offerRetryTimer);
 
-    // If answer has already been created for this peer connection, avoid destroying connection & re-transmit existing answer
-    if (this.peerConnection && this.peerConnection.localDescription && this.peerConnection.remoteDescription) {
-      console.log('Already generated answer for this session, re-sending existing answer to partner');
+    // If we already have a live, working peer connection with both descriptions set
+    // AND the connection isn't dead, just re-send the existing answer instead of destroying it.
+    if (
+      this.peerConnection &&
+      this.peerConnection.localDescription &&
+      this.peerConnection.remoteDescription &&
+      this.peerConnection.connectionState !== 'failed' &&
+      this.peerConnection.connectionState !== 'closed'
+    ) {
+      console.log('Active PC already has answer, re-sending existing answer to caller');
       await this.sendSdpSignal('webrtc-answer', this.peerConnection.localDescription, this.myRole);
       return;
     }
@@ -891,12 +903,25 @@ class RomanticVideoCallService {
     clearTimeout(this.offerRetryTimer);
     if (!this.peerConnection) return;
     try {
-      if (this.peerConnection.signalingState === 'have-local-offer') {
+      const state = this.peerConnection.signalingState;
+      if (state === 'have-local-offer') {
         await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
+        console.log('WebRTC answer accepted, remote description set successfully');
         while (this.queuedCandidates.length > 0) {
           const cand = this.queuedCandidates.shift();
           if (cand) await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
         }
+      } else if (state === 'stable') {
+        // Duplicate answer for an already-established session, just drain any queued candidates
+        console.log('Ignoring duplicate WebRTC answer (already stable)');
+        while (this.queuedCandidates.length > 0) {
+          const cand = this.queuedCandidates.shift();
+          if (cand) {
+            try { await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch {}
+          }
+        }
+      } else {
+        console.warn('Received WebRTC answer in unexpected signalingState:', state);
       }
     } catch (e) {
       console.error('Failed to set remote answer:', e);
@@ -992,13 +1017,12 @@ class RomanticVideoCallService {
           this.status = 'connected';
           romanticMusic.playConnectedChime();
           this.notify();
-          // Caller now kicks off the WebRTC offer
-          await this.initiateWebRTCOffer(this.callerRole || this.myRole);
-        } else if (this.status === 'connected' && (!this.peerConnection || !this.peerConnection.remoteDescription)) {
-          // If we received repeated accept and haven't established remote connection, re-initiate offer
-          console.log('Received repeated call-accept while connected; re-initiating WebRTC offer');
+          // Caller creates exactly ONE PeerConnection and kicks off the WebRTC offer.
+          // The offer retry loop handles delivery reliability from here.
           await this.initiateWebRTCOffer(this.callerRole || this.myRole);
         }
+        // If already connected, silently ignore duplicate call-accept signals.
+        // Re-initiating the offer would destroy the active PeerConnection.
         break;
 
       case 'call-decline':
