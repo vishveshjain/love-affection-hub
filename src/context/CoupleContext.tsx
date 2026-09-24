@@ -27,6 +27,7 @@ import { soundFx } from '../utils/audio';
 import { getRandomWhisper } from '../utils/whispers';
 import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
 import { saveCloudData, startAutoCloudSync, onCloudDataLoaded, saveMemoriesToLocal, fetchCloudData, pushToCloudNow } from '../utils/cloudStore';
+import { videoCallService } from '../utils/webrtc';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -363,6 +364,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   useEffect(() => {
     realtimeHub.connect(getRoomKey());
     realtimeHub.setUserInfo(profile.currentUserRole, currentUserName);
+    videoCallService.myRole = profile.currentUserRole;
 
     // Initialize cloud persistence & recurring background sync
     const unsubCloudSync = startAutoCloudSync(25000);

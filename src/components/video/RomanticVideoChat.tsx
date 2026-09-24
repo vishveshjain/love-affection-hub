@@ -66,9 +66,11 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [touchingHeart, setTouchingHeart] = useState(false);
   const [partnerTouching, setPartnerTouching] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Subscribe to call state changes
@@ -128,7 +130,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     }
   }, [localStream, isVideoOff, callStatus, viewMode]);
 
-  // Attach remote stream to video tag
+  // Attach remote stream to video and dedicated audio elements
   useEffect(() => {
     if (remoteVideoRef.current) {
       if (remoteStream) {
@@ -140,7 +142,37 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         remoteVideoRef.current.srcObject = null;
       }
     }
+
+    if (remoteAudioRef.current) {
+      if (remoteStream) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current
+          .play()
+          .then(() => {
+            setAudioAutoplayBlocked(false);
+          })
+          .catch((err) => {
+            console.warn('Autoplay remote audio blocked by browser policy:', err);
+            setAudioAutoplayBlocked(true);
+          });
+      } else {
+        remoteAudioRef.current.srcObject = null;
+        setAudioAutoplayBlocked(false);
+      }
+    }
   }, [remoteStream, callStatus, viewMode]);
+
+  const handleEnableAudio = () => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current
+        .play()
+        .then(() => setAudioAutoplayBlocked(false))
+        .catch(() => {});
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.play().catch(() => {});
+    }
+  };
 
   // Call duration counter
   useEffect(() => {
@@ -255,6 +287,23 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   return (
     <div className={`relative w-full rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 bg-gradient-to-br ${currentThemeConfig.gradient} min-h-[580px] md:min-h-[640px] flex flex-col justify-between border-2 border-rose-400/40 select-none`}>
+      {/* Dedicated Remote Audio Playback Element */}
+      <audio ref={remoteAudioRef} autoPlay playsInline />
+
+      {/* Audio Autoplay Unblock Prompt (if mobile browser blocks initial unmuted audio) */}
+      {audioAutoplayBlocked && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <button
+            type="button"
+            onClick={handleEnableAudio}
+            className="px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 via-rose-500 to-pink-500 text-white font-extrabold text-xs shadow-2xl border-2 border-white/80 flex items-center gap-2 cursor-pointer active:scale-95 ring-4 ring-rose-400/40"
+          >
+            <Volume2 className="w-4 h-4 animate-spin" />
+            <span>Tap to hear {partnerName}'s voice 🔊</span>
+          </button>
+        </div>
+      )}
+
       {/* Dynamic Animated Atmospheric Particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-1/4 left-1/5 w-72 h-72 rounded-full bg-rose-500/15 blur-3xl animate-pulse" />
@@ -520,7 +569,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       remoteVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: currentFilterConfig.cssFilter }}
-                    className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
+                    className={`w-full h-full object-cover transition-opacity duration-300 ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
                   />
                   {remoteStream && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
@@ -528,7 +577,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
                   {!remoteStream && (
                     /* Waiting / Ringing Placeholder */
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-white">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-black/50">
                       <div className="relative mb-3">
                         <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-rose-400 shadow-xl bg-white animate-pulse">
                           <img src={partnerPhoto} alt={partnerName} className="w-full h-full object-cover" />
@@ -560,14 +609,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       localVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: currentFilterConfig.cssFilter }}
-                    className={`w-full h-full object-cover -scale-x-100 ${localStream && !isVideoOff ? 'block' : 'hidden'}`}
+                    className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
                   />
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
 
                   {(!localStream || isVideoOff) && (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-white">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-slate-900/80">
                       <VideoOff className="w-12 h-12 text-slate-400 mb-2" />
                       <p className="text-xs text-slate-300">Camera is turned off</p>
                     </div>
@@ -593,14 +642,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     remoteVideoRef.current?.play().catch(() => {});
                   }}
                   style={{ filter: currentFilterConfig.cssFilter }}
-                  className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
+                  className={`w-full h-full object-cover transition-opacity duration-300 ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
                 />
                 {remoteStream && (
                   <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                 )}
 
                 {!remoteStream && (
-                  <div className="flex flex-col items-center justify-center p-6 text-center text-white">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-black/50">
                     <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-rose-400 shadow-xl bg-white mb-3 animate-pulse">
                       <img src={partnerPhoto} alt={partnerName} className="w-full h-full object-cover" />
                     </div>
@@ -622,10 +671,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       pipVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: currentFilterConfig.cssFilter }}
-                    className={`w-full h-full object-cover -scale-x-100 ${localStream && !isVideoOff ? 'block' : 'hidden'}`}
+                    className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
                   />
                   {(!localStream || isVideoOff) && (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-400 text-[10px]">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-400 text-[10px]">
                       <VideoOff className="w-6 h-6 mb-1" />
                       <span>Cam Off</span>
                     </div>

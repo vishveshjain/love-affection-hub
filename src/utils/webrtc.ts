@@ -145,6 +145,7 @@ export interface VideoSignalData {
   callerName?: string;
   answererRole?: UserRole;
   sdp?: RTCSessionDescriptionInit;
+  compressedSdp?: string;
   transmissionId?: string;
   chunkIndex?: number;
   totalChunks?: number;
@@ -159,6 +160,37 @@ export interface VideoSignalData {
   themeId?: RomanticThemeId;
   filterId?: RomanticFilterId;
   reason?: string;
+}
+
+// Compress text with built-in browser deflate-raw to fit large SDP into a single message
+async function compressString(str: string): Promise<string> {
+  if (typeof CompressionStream !== 'undefined') {
+    const cs = new CompressionStream('deflate-raw');
+    const writer = cs.writable.getWriter();
+    writer.write(new TextEncoder().encode(str));
+    writer.close();
+    const compressedBuf = await new Response(cs.readable).arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(compressedBuf);
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+  return '';
+}
+
+// Decompress base64 deflate-raw payload back to full SDP string
+async function decompressString(b64: string): Promise<string> {
+  if (typeof DecompressionStream !== 'undefined') {
+    const binStr = atob(b64);
+    const u8 = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) u8[i] = binStr.charCodeAt(i);
+    const ds = new DecompressionStream('deflate-raw');
+    const dWriter = ds.writable.getWriter();
+    dWriter.write(u8);
+    dWriter.close();
+    return await new Response(ds.readable).text();
+  }
+  return '';
 }
 
 const ICE_SERVERS: RTCConfiguration = {
@@ -199,8 +231,11 @@ class RomanticVideoCallService {
     string,
     { chunks: (string | undefined)[]; total: number; timer: any; senderRole?: UserRole }
   >();
+  private mediaPromise: Promise<MediaStream | null> | null = null;
+  private offerRetryTimer: any = null;
 
   public status: 'idle' | 'calling' | 'incoming' | 'connected' = 'idle';
+  public myRole?: UserRole;
   public callerRole?: UserRole;
   public callerName?: string;
   public isMuted: boolean = false;
@@ -264,59 +299,96 @@ class RomanticVideoCallService {
   }
 
   private async sendSignal(data: VideoSignalData, senderRole?: UserRole, senderName?: string) {
+    const role = senderRole || this.myRole;
     await realtimeHub.publish({
       type: 'VIDEO_CALL_SIGNAL',
       clientId: getClientId(),
-      senderRole,
+      senderRole: role,
       senderName,
       data,
       timestamp: Date.now(),
     });
   }
 
-  // Request user camera and microphone (tuned for mobile performance & rapid connection)
-  public async getLocalMedia(videoWanted: boolean = true, audioWanted: boolean = true): Promise<MediaStream | null> {
-    if (this.localStream) return this.localStream;
+  // Safely attach local tracks to active RTCPeerConnection
+  private attachLocalStreamToPc(pc: RTCPeerConnection | null) {
+    if (!pc || !this.localStream) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: videoWanted
-          ? {
-              facingMode: 'user',
-              width: { ideal: 640, max: 1280 },
-              height: { ideal: 480, max: 720 },
-              frameRate: { ideal: 30, max: 30 },
-            }
-          : false,
-        audio: audioWanted
-          ? {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            }
-          : false,
+      const senders = pc.getSenders();
+      this.localStream.getTracks().forEach((track) => {
+        const existingSender = senders.find((s) => s.track?.kind === track.kind);
+        if (existingSender) {
+          existingSender.replaceTrack(track).catch(() => {});
+        } else {
+          try {
+            pc.addTrack(track, this.localStream!);
+          } catch (err) {
+            console.warn('addTrack failed, continuing:', err);
+          }
+        }
       });
-      this.localStream = stream;
-      this.notify();
-      return stream;
-    } catch (err) {
-      console.warn('Could not acquire preferred camera/mic, trying basic mobile fallback:', err);
-      try {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({
-          video: videoWanted ? { facingMode: 'user' } : false,
-          audio: audioWanted ? true : false,
-        });
-        this.localStream = fallbackStream;
-        this.notify();
-        return fallbackStream;
-      } catch (fallbackErr) {
-        console.warn('Could not acquire user camera/mic even with fallback:', fallbackErr);
-        return null;
-      }
+    } catch (e) {
+      console.warn('attachLocalStreamToPc caught error:', e);
     }
+  }
+
+  // Request user camera and microphone (deduplicated & tuned for mobile front camera + clear voice)
+  public async getLocalMedia(videoWanted: boolean = true, audioWanted: boolean = true): Promise<MediaStream | null> {
+    if (this.localStream && this.localStream.active && this.localStream.getVideoTracks().some((t) => t.readyState === 'live')) {
+      return this.localStream;
+    }
+    if (this.mediaPromise) {
+      return this.mediaPromise;
+    }
+
+    this.mediaPromise = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoWanted
+            ? {
+                facingMode: 'user',
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+              }
+            : false,
+          audio: audioWanted
+            ? {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              }
+            : false,
+        });
+        this.localStream = stream;
+        this.attachLocalStreamToPc(this.peerConnection);
+        this.notify();
+        return stream;
+      } catch (err) {
+        console.warn('Preferred getUserMedia failed, trying mobile fallback:', err);
+        try {
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({
+            video: videoWanted ? true : false,
+            audio: audioWanted ? true : false,
+          });
+          this.localStream = fallbackStream;
+          this.attachLocalStreamToPc(this.peerConnection);
+          this.notify();
+          return fallbackStream;
+        } catch (fallbackErr) {
+          console.warn('Could not acquire user camera/mic:', fallbackErr);
+          return null;
+        }
+      } finally {
+        this.mediaPromise = null;
+      }
+    })();
+
+    return this.mediaPromise;
   }
 
   // Start outgoing video call to partner
   public async startCall(myRole: UserRole, myName: string, theme: RomanticThemeId = 'moonlight'): Promise<boolean> {
+    this.myRole = myRole;
     this.status = 'calling';
     this.callerRole = myRole;
     this.callerName = myName;
@@ -326,7 +398,7 @@ class RomanticVideoCallService {
     // Start soft romantic ambience during calling
     romanticMusic.startRomanticAmbience(0.2);
 
-    // Get camera stream
+    // Ensure camera & mic stream is acquired
     await this.getLocalMedia(true, true);
 
     // Broadcast call invitation to partner
@@ -350,10 +422,14 @@ class RomanticVideoCallService {
     romanticMusic.playConnectedChime();
     romanticMusic.startRomanticAmbience(0.18);
 
+    this.myRole = myRole;
     this.status = 'connected';
     this.notify();
 
-    // 1. Send accept signal IMMEDIATELY to prevent caller hanging in calling state
+    // 1. Acquire camera & mic FIRST so localStream is ready before answerer responds
+    await this.getLocalMedia(true, true);
+
+    // 2. Dispatch accept signal to notify caller to initiate WebRTC offer
     await this.sendSignal(
       {
         signalType: 'call-accept',
@@ -362,9 +438,6 @@ class RomanticVideoCallService {
       myRole,
       myName
     );
-
-    // 2. Acquire camera in parallel so answerer is ready for offer
-    await this.getLocalMedia(true, true);
   }
 
   // Decline incoming call
@@ -384,6 +457,7 @@ class RomanticVideoCallService {
 
   // End call
   public async endCall(notifyRemote: boolean = true) {
+    clearTimeout(this.offerRetryTimer);
     romanticMusic.stopRinging();
     romanticMusic.stopRomanticAmbience();
     romanticMusic.playHangupChime();
@@ -408,10 +482,10 @@ class RomanticVideoCallService {
 
     if (notifyRemote) {
       // Send call-end signal to partner reliably
-      await this.sendSignal({ signalType: 'call-end' });
-      // Repeat after 150ms to ensure delivery over cellular/mobile networks
+      await this.sendSignal({ signalType: 'call-end' }, this.myRole);
+      // Repeat after 150ms to ensure delivery over mobile networks
       setTimeout(() => {
-        this.sendSignal({ signalType: 'call-end' }).catch(() => {});
+        this.sendSignal({ signalType: 'call-end' }, this.myRole).catch(() => {});
       }, 150);
     }
   }
@@ -437,7 +511,7 @@ class RomanticVideoCallService {
   }
 
   // Initialize WebRTC PeerConnection
-  private createPeerConnection(myRole?: UserRole): RTCPeerConnection {
+  private createPeerConnection(): RTCPeerConnection {
     if (this.peerConnection) {
       try {
         this.peerConnection.close();
@@ -447,22 +521,16 @@ class RomanticVideoCallService {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     this.peerConnection = pc;
 
-    // Attach local stream tracks
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        try {
-          pc.addTrack(track, this.localStream!);
-        } catch (err) {
-          console.warn('Failed adding track to peer connection:', err);
-        }
-      });
-    }
+    // Attach local stream tracks immediately if already acquired
+    this.attachLocalStreamToPc(pc);
 
     // Ensure bidirectional audio & video transceivers exist
     try {
       const transceivers = pc.getTransceivers();
-      if (transceivers.length === 0) {
+      if (!transceivers.some((t) => t.receiver.track.kind === 'audio')) {
         pc.addTransceiver('audio', { direction: 'sendrecv' });
+      }
+      if (!transceivers.some((t) => t.receiver.track.kind === 'video')) {
         pc.addTransceiver('video', { direction: 'sendrecv' });
       }
     } catch {}
@@ -507,7 +575,6 @@ class RomanticVideoCallService {
     };
 
     // Trickle ICE candidates with light debounce to avoid 429
-    // Trickle ICE candidates with batching to avoid flooding HTTP requests
     let iceTimer: any = null;
     let pendingIce: RTCIceCandidateInit[] = [];
 
@@ -519,16 +586,20 @@ class RomanticVideoCallService {
           if (pendingIce.length > 0) {
             const batch = [...pendingIce];
             pendingIce = [];
-            this.sendSignal({
-              signalType: 'webrtc-ice-batch',
-              candidates: batch,
-            }, myRole);
+            this.sendSignal(
+              {
+                signalType: 'webrtc-ice-batch',
+                candidates: batch,
+              },
+              this.myRole
+            );
           }
-        }, 200);
+        }, 150);
       }
     };
 
     pc.onconnectionstatechange = () => {
+      console.log('WebRTC connection state:', pc.connectionState);
       if (pc.connectionState === 'connected') {
         this.status = 'connected';
         this.notify();
@@ -538,6 +609,7 @@ class RomanticVideoCallService {
     };
 
     pc.oniceconnectionstatechange = () => {
+      console.log('WebRTC ice connection state:', pc.iceConnectionState);
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         this.status = 'connected';
         this.notify();
@@ -547,7 +619,39 @@ class RomanticVideoCallService {
     return pc;
   }
 
-  // Transmit large SDP payloads across ntfy safely in sub-1KB chunks
+  // Send SDP Offer or Answer using single-message deflate-raw compression with chunked fallback
+  private async sendSdpSignal(
+    type: 'webrtc-offer' | 'webrtc-answer',
+    sdp: RTCSessionDescriptionInit,
+    senderRole?: UserRole
+  ) {
+    const role = senderRole || this.myRole;
+    const rawSdp = sdp.sdp || '';
+    const serialized = JSON.stringify({ type: sdp.type, sdp: rawSdp });
+
+    // Primary: Compress large SDP into single ~2.5KB base64 string to bypass ntfy limits & token-bucket rate limits
+    try {
+      const compressed = await compressString(serialized);
+      if (compressed && compressed.length < 3800) {
+        console.log(`Sending compressed single-message ${type} (${compressed.length} bytes base64)`);
+        await this.sendSignal(
+          {
+            signalType: type,
+            compressedSdp: compressed,
+          },
+          role
+        );
+        return;
+      }
+    } catch (e) {
+      console.warn('SDP compression failed, attempting chunked fallback:', e);
+    }
+
+    // Secondary fallback: sub-1KB chunked delivery
+    await this.sendSdpInChunks(type, sdp, role);
+  }
+
+  // Transmit large SDP payloads across ntfy safely in sub-1KB chunks (fallback)
   private async sendSdpInChunks(
     type: 'webrtc-offer' | 'webrtc-answer',
     sdp: RTCSessionDescriptionInit,
@@ -623,10 +727,11 @@ class RomanticVideoCallService {
 
   // Create & send WebRTC Offer (Caller)
   private async initiateWebRTCOffer(myRole?: UserRole) {
+    clearTimeout(this.offerRetryTimer);
     if (!this.localStream) {
       await this.getLocalMedia(true, true);
     }
-    const pc = this.createPeerConnection(myRole);
+    const pc = this.createPeerConnection();
     try {
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
@@ -634,32 +739,41 @@ class RomanticVideoCallService {
       });
       await pc.setLocalDescription(offer);
 
-      // Wait briefly so STUN candidates are embedded directly into SDP offer
-      await this.waitForIceGathering(pc, 800);
+      // Wait briefly so initial STUN candidates are embedded directly into SDP offer
+      await this.waitForIceGathering(pc, 600);
 
       const finalOffer = pc.localDescription || offer;
-      await this.sendSdpInChunks('webrtc-offer', finalOffer, myRole);
+      await this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole);
+
+      // Resilience against mobile packet drop: retry sending offer after 3.5s if no answer has arrived yet
+      this.offerRetryTimer = setTimeout(async () => {
+        if (this.peerConnection === pc && !pc.remoteDescription && this.status === 'connected') {
+          console.log('No answer received yet after 3.5s, re-transmitting WebRTC offer to partner...');
+          await this.sendSdpSignal('webrtc-offer', finalOffer, this.myRole || myRole);
+        }
+      }, 3500);
     } catch (e) {
       console.error('Failed to create WebRTC offer:', e);
     }
   }
 
   // Handle incoming WebRTC Offer & respond with Answer (Answerer)
-  private async handleWebRTCOffer(offerSdp: RTCSessionDescriptionInit, myRole?: UserRole) {
-    // Ensure Answerer has acquired camera before creating answer
+  private async handleWebRTCOffer(offerSdp: RTCSessionDescriptionInit, senderRole?: UserRole) {
+    clearTimeout(this.offerRetryTimer);
+    // Ensure Answerer has acquired camera & mic before creating answer
     if (!this.localStream) {
       await this.getLocalMedia(true, true);
     }
 
-    const pc = this.createPeerConnection(myRole);
+    const pc = this.createPeerConnection();
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      // Wait briefly so STUN candidates are embedded directly into SDP answer
-      await this.waitForIceGathering(pc, 800);
+      // Wait briefly so initial STUN candidates are embedded directly into SDP answer
+      await this.waitForIceGathering(pc, 600);
 
       // Process any early candidates received before remote description was ready
       while (this.queuedCandidates.length > 0) {
@@ -672,7 +786,7 @@ class RomanticVideoCallService {
       }
 
       const finalAnswer = pc.localDescription || answer;
-      await this.sendSdpInChunks('webrtc-answer', finalAnswer, myRole);
+      await this.sendSdpSignal('webrtc-answer', finalAnswer, this.myRole);
     } catch (e) {
       console.error('Failed to handle WebRTC offer:', e);
     }
@@ -680,12 +794,15 @@ class RomanticVideoCallService {
 
   // Handle incoming WebRTC Answer (Caller)
   private async handleWebRTCAnswer(answerSdp: RTCSessionDescriptionInit) {
+    clearTimeout(this.offerRetryTimer);
     if (!this.peerConnection) return;
     try {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
-      while (this.queuedCandidates.length > 0) {
-        const cand = this.queuedCandidates.shift();
-        if (cand) await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      if (this.peerConnection.signalingState === 'have-local-offer') {
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
+        while (this.queuedCandidates.length > 0) {
+          const cand = this.queuedCandidates.shift();
+          if (cand) await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+        }
       }
     } catch (e) {
       console.error('Failed to set remote answer:', e);
@@ -725,7 +842,7 @@ class RomanticVideoCallService {
           romanticMusic.playConnectedChime();
           this.notify();
           // Caller now kicks off the WebRTC offer
-          await this.initiateWebRTCOffer(this.callerRole);
+          await this.initiateWebRTCOffer(this.callerRole || this.myRole);
         }
         break;
 
@@ -777,13 +894,29 @@ class RomanticVideoCallService {
         break;
 
       case 'webrtc-offer':
-        if (data.sdp) {
+        if (data.compressedSdp) {
+          try {
+            const decompressed = await decompressString(data.compressedSdp);
+            const parsed = JSON.parse(decompressed) as RTCSessionDescriptionInit;
+            await this.handleWebRTCOffer(parsed, senderRole);
+          } catch (err) {
+            console.error('Failed to decompress or parse WebRTC offer:', err);
+          }
+        } else if (data.sdp) {
           await this.handleWebRTCOffer(data.sdp, senderRole);
         }
         break;
 
       case 'webrtc-answer':
-        if (data.sdp) {
+        if (data.compressedSdp) {
+          try {
+            const decompressed = await decompressString(data.compressedSdp);
+            const parsed = JSON.parse(decompressed) as RTCSessionDescriptionInit;
+            await this.handleWebRTCAnswer(parsed);
+          } catch (err) {
+            console.error('Failed to decompress or parse WebRTC answer:', err);
+          }
+        } else if (data.sdp) {
           await this.handleWebRTCAnswer(data.sdp);
         }
         break;

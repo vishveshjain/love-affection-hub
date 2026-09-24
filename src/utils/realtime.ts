@@ -37,9 +37,8 @@ const CLIENT_STORAGE_KEY = 'love_app_client_id_v2';
 
 // Primary and fallback high-availability servers that support CORS and worldwide access
 const SERVERS = [
-  'https://ntfy.envs.net',
-  'https://ntfy.tedomum.fr',
   'https://ntfy.adminforge.de',
+  'https://ntfy.tedomum.fr',
 ];
 
 const MEDIA_SERVERS = [
