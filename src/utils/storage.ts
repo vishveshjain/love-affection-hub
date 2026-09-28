@@ -8,6 +8,7 @@ import {
   JourneyMilestone,
   ChatMessage,
   MashResult,
+  TelepathyScore,
 } from '../types';
 
 export const DEFAULT_BOYFRIEND_AVATAR = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23dbeafe"/><stop offset="100%" stop-color="%2393c5fd"/></linearGradient></defs><rect width="200" height="200" rx="100" fill="url(%23bg)"/><circle cx="100" cy="115" r="45" fill="%23fed7aa"/><circle cx="100" cy="85" r="40" fill="%23fed7aa"/><path d="M 60 75 Q 100 35 140 75 Q 100 55 60 75 Z" fill="%23334155"/><circle cx="85" cy="85" r="5" fill="%231e293b"/><circle cx="115" cy="85" r="5" fill="%231e293b"/><circle cx="78" cy="95" r="6" fill="%23fda4af" opacity="0.6"/><circle cx="122" cy="95" r="6" fill="%23fda4af" opacity="0.6"/><path d="M 90 102 Q 100 112 110 102" stroke="%23e11d48" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M 50 170 Q 100 140 150 170 L 150 200 L 50 200 Z" fill="%233b82f6"/><polygon points="95,145 105,145 100,165" fill="%23f43f5e"/><text x="100" y="190" text-anchor="middle" font-size="20">👑</text></svg>`;
@@ -232,6 +233,8 @@ export const STORAGE_KEYS = {
   MILESTONES: 'love_app_milestones_v2',
   CHAT: 'love_app_chat_messages_v2',
   MASH: 'love_app_mash_fortunes_v1',
+  TELEPATHY: 'love_app_telepathy_stats_v1',
+  TRUTH_DARE: 'love_app_truth_dare_v1',
 };
 
 export const PERMANENT_KEYS = {
@@ -242,6 +245,7 @@ export const PERMANENT_KEYS = {
   BF_PHOTO_VAULT: 'love_app_permanent_bf_photo_v1',
   GF_PHOTO_VAULT: 'love_app_permanent_gf_photo_v1',
   MASH_VAULT: 'love_app_permanent_mash_vault_v1',
+  TELEPATHY_VAULT: 'love_app_permanent_telepathy_v1',
 };
 
 export const DEFAULT_MEMORIES: MemoryItem[] = [
@@ -530,6 +534,37 @@ export function saveMashFortunes(fortunes: MashResult[]): void {
     localStorage.setItem(PERMANENT_KEYS.MASH_VAULT, json);
   } catch (e) {
     console.error('Failed to save MASH fortunes', e);
+  }
+}
+
+export const INITIAL_TELEPATHY_SCORE: TelepathyScore = {
+  totalRounds: 0,
+  totalMatches: 0,
+  history: [],
+};
+
+export function loadTelepathyScore(): TelepathyScore {
+  try {
+    const raw =
+      localStorage.getItem(STORAGE_KEYS.TELEPATHY) ||
+      localStorage.getItem(PERMANENT_KEYS.TELEPATHY_VAULT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.totalRounds === 'number') return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load telepathy score', e);
+  }
+  return INITIAL_TELEPATHY_SCORE;
+}
+
+export function saveTelepathyScore(score: TelepathyScore): void {
+  try {
+    const json = JSON.stringify(score);
+    localStorage.setItem(STORAGE_KEYS.TELEPATHY, json);
+    localStorage.setItem(PERMANENT_KEYS.TELEPATHY_VAULT, json);
+  } catch (e) {
+    console.error('Failed to save telepathy score', e);
   }
 }
 

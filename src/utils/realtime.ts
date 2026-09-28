@@ -17,7 +17,9 @@ export type RealtimeEventType =
   | 'FLAMES_RUN'
   | 'PHOTO_UPDATE'
   | 'VIDEO_CALL_SIGNAL'
-  | 'MASH_UPDATE';
+  | 'MASH_UPDATE'
+  | 'TRUTH_OR_DARE_EVENT'
+  | 'TELEPATHY_EVENT';
 
 export interface RealtimePayload {
   id?: string;

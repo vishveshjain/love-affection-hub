@@ -15,6 +15,8 @@ import { AffectionWheel } from './components/games/AffectionWheel';
 import { CoupleQuiz } from './components/games/CoupleQuiz';
 import { MemoryWall } from './components/games/MemoryWall';
 import { MashGame } from './components/games/MashGame';
+import { TruthOrDare } from './components/games/TruthOrDare';
+import { WouldYouRather } from './components/games/WouldYouRather';
 import { RomanticVideoChat } from './components/video/RomanticVideoChat';
 import { IncomingCallModal } from './components/video/IncomingCallModal';
 import { soundFx } from './utils/audio';
@@ -29,6 +31,7 @@ import {
   HelpCircle,
   Camera,
   Castle,
+  Radio,
   Heart,
   RefreshCw,
   ChevronLeft,
@@ -42,6 +45,8 @@ type GameTab =
   | 'notes'
   | 'flames'
   | 'mash'
+  | 'truth_or_dare'
+  | 'telepathy'
   | 'coupons'
   | 'wheel'
   | 'quiz'
@@ -95,6 +100,18 @@ const MainContent: React.FC = () => {
       label: 'M.A.S.H. Destiny',
       icon: <Castle className="w-4 h-4 text-violet-500 fill-violet-400" />,
       badge: 'Classic',
+    },
+    {
+      id: 'truth_or_dare',
+      label: 'Truth or Dare',
+      icon: <Flame className="w-4 h-4 text-rose-500 fill-rose-500" />,
+      badge: 'Spicy',
+    },
+    {
+      id: 'telepathy',
+      label: 'Love Telepathy',
+      icon: <Radio className="w-4 h-4 text-purple-500" />,
+      badge: 'Sync',
     },
     {
       id: 'coupons',
@@ -221,6 +238,8 @@ const MainContent: React.FC = () => {
             {activeTab === 'notes' && <LoveNotesJourney />}
             {activeTab === 'flames' && <FlamesGame />}
             {activeTab === 'mash' && <MashGame />}
+            {activeTab === 'truth_or_dare' && <TruthOrDare />}
+            {activeTab === 'telepathy' && <WouldYouRather />}
             {activeTab === 'coupons' && <ScratchCoupons />}
             {activeTab === 'wheel' && <AffectionWheel />}
             {activeTab === 'quiz' && <CoupleQuiz />}

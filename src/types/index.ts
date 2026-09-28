@@ -147,3 +147,37 @@ export interface MashResult {
   fiftyYears: MashOption;
   story: string;
 }
+
+export type TruthOrDareType = 'truth' | 'dare';
+export type TruthOrDareCategory = 'sweet' | 'spicy' | 'deep' | 'playful';
+
+export interface TruthOrDareItem {
+  id: string;
+  type: TruthOrDareType;
+  category: TruthOrDareCategory;
+  text: string;
+  emoji: string;
+  authorRole?: UserRole;
+  isCustom?: boolean;
+}
+
+export interface TelepathyQuestion {
+  id: string;
+  category: 'romantic' | 'adventure' | 'cozy' | 'playful';
+  title: string;
+  optionA: { text: string; emoji: string };
+  optionB: { text: string; emoji: string };
+}
+
+export interface TelepathyScore {
+  totalRounds: number;
+  totalMatches: number;
+  history: {
+    questionId: string;
+    questionTitle: string;
+    boyfriendChoice: 'A' | 'B';
+    girlfriendChoice: 'A' | 'B';
+    isMatch: boolean;
+    timestamp: number;
+  }[];
+}
