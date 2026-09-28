@@ -236,9 +236,34 @@ export const PERMANENT_KEYS = {
   DREAMS_VAULT: 'love_app_permanent_dreams_vault_v1',
   NOTES_VAULT: 'love_app_permanent_notes_vault_v1',
   MILESTONES_VAULT: 'love_app_permanent_milestones_vault_v1',
+  MEMORIES_VAULT: 'love_app_permanent_memories_vault_v1',
   BF_PHOTO_VAULT: 'love_app_permanent_bf_photo_v1',
   GF_PHOTO_VAULT: 'love_app_permanent_gf_photo_v1',
 };
+
+export const DEFAULT_MEMORIES: MemoryItem[] = [
+  {
+    id: 'm1',
+    date: 'Our First Date',
+    title: 'Butterflies & Shy Smiles',
+    description: 'When we first met, couldn’t stop smiling and heart was beating 200 bpm!',
+    emoji: '☕',
+  },
+  {
+    id: 'm2',
+    date: 'Late Night Talk',
+    title: 'Talking Until 3 AM',
+    description: 'Realized we could talk about everything and nothing forever.',
+    emoji: '🌙',
+  },
+  {
+    id: 'm3',
+    date: 'Spontaneous Day Out',
+    title: 'Ice Cream & Stolen Kisses',
+    description: 'Walking hand in hand, eating dessert, and feeling like the happiest people in the world.',
+    emoji: '🍦',
+  },
+];
 
 export function loadProfile(): CoupleProfile {
   try {
@@ -399,6 +424,33 @@ export function saveMilestones(milestones: JourneyMilestone[]): void {
     localStorage.setItem(PERMANENT_KEYS.MILESTONES_VAULT, json);
   } catch (e) {
     console.error('Failed to save milestones', e);
+  }
+}
+
+export function loadMemories(): MemoryItem[] {
+  try {
+    const raw =
+      localStorage.getItem(STORAGE_KEYS.MEMORIES) ||
+      localStorage.getItem(PERMANENT_KEYS.MEMORIES_VAULT) ||
+      localStorage.getItem('love_app_memories_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load memories', e);
+  }
+  return DEFAULT_MEMORIES;
+}
+
+export function saveMemories(memories: MemoryItem[]): void {
+  try {
+    const json = JSON.stringify(memories);
+    localStorage.setItem(STORAGE_KEYS.MEMORIES, json);
+    localStorage.setItem(PERMANENT_KEYS.MEMORIES_VAULT, json);
+    localStorage.setItem('love_app_memories_v1', json);
+  } catch (e) {
+    console.error('Failed to save memories', e);
   }
 }
 

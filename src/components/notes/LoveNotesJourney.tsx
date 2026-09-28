@@ -111,6 +111,7 @@ export const LoveNotesJourney: React.FC = () => {
 
     const updated = [newNote, ...notes];
     setNotes(updated);
+    saveLoveNotes(updated);
     setNoteTitle('');
     setNoteBody('');
     setShowAddNote(false);
@@ -146,6 +147,7 @@ export const LoveNotesJourney: React.FC = () => {
 
     const updated = [...milestones, newMilestone];
     setMilestones(updated);
+    saveMilestones(updated);
     setMilestoneTitle('');
     setMilestoneDesc('');
     setShowAddMilestone(false);
@@ -186,6 +188,7 @@ export const LoveNotesJourney: React.FC = () => {
     });
 
     setMilestones(updated);
+    saveMilestones(updated);
 
     realtimeHub.publish({
       type: 'JOURNEY_UPDATE',

@@ -18,6 +18,7 @@ import {
   saveDreams,
   saveLoveNotes,
   saveMilestones,
+  saveMemories,
   isCustomPhoto,
   STORAGE_KEYS,
   PERMANENT_KEYS,
@@ -457,7 +458,7 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       } else if (payload.type === 'MEMORY_UPDATE') {
         if (Array.isArray(payload.data?.memories)) {
-          saveMemoriesToLocal(payload.data.memories);
+          saveMemories(payload.data.memories);
           saveCloudData({ memories: payload.data.memories });
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('love_app_memories_sync', { detail: payload.data.memories }));
@@ -530,17 +531,23 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const resetAllData = () => {
-    // Preserve precious dreams, notes, milestones, profile photos, and room setup!
+    // Preserve precious dreams, notes, milestones, memories, profile photos, and room setup!
     const dreams = localStorage.getItem(STORAGE_KEYS.DREAMS) || localStorage.getItem(PERMANENT_KEYS.DREAMS_VAULT);
     const notes = localStorage.getItem(STORAGE_KEYS.NOTES) || localStorage.getItem(PERMANENT_KEYS.NOTES_VAULT);
     const milestones = localStorage.getItem(STORAGE_KEYS.MILESTONES) || localStorage.getItem(PERMANENT_KEYS.MILESTONES_VAULT);
+    const memories =
+      localStorage.getItem(STORAGE_KEYS.MEMORIES) ||
+      localStorage.getItem(PERMANENT_KEYS.MEMORIES_VAULT) ||
+      localStorage.getItem('love_app_memories_v1');
     const profileData = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const bfPhotoVault = localStorage.getItem(PERMANENT_KEYS.BF_PHOTO_VAULT);
+    const gfPhotoVault = localStorage.getItem(PERMANENT_KEYS.GF_PHOTO_VAULT);
     const roomKey = localStorage.getItem('love_app_realtime_room_key_v1');
 
     // Clear transient stats, coupons, animations, etc.
     localStorage.clear();
 
-    // Re-insert permanent data so written dreams, notes, and memories are never lost!
+    // Re-insert permanent data so written dreams, notes, milestones, memories, and photos are never lost!
     if (dreams) {
       localStorage.setItem(STORAGE_KEYS.DREAMS, dreams);
       localStorage.setItem(PERMANENT_KEYS.DREAMS_VAULT, dreams);
@@ -552,6 +559,17 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (milestones) {
       localStorage.setItem(STORAGE_KEYS.MILESTONES, milestones);
       localStorage.setItem(PERMANENT_KEYS.MILESTONES_VAULT, milestones);
+    }
+    if (memories) {
+      localStorage.setItem(STORAGE_KEYS.MEMORIES, memories);
+      localStorage.setItem(PERMANENT_KEYS.MEMORIES_VAULT, memories);
+      localStorage.setItem('love_app_memories_v1', memories);
+    }
+    if (bfPhotoVault) {
+      localStorage.setItem(PERMANENT_KEYS.BF_PHOTO_VAULT, bfPhotoVault);
+    }
+    if (gfPhotoVault) {
+      localStorage.setItem(PERMANENT_KEYS.GF_PHOTO_VAULT, gfPhotoVault);
     }
     if (profileData) {
       localStorage.setItem(STORAGE_KEYS.PROFILE, profileData);

@@ -1,43 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useCouple } from '../../context/CoupleContext';
 import { MemoryItem } from '../../types';
-import { fileToDataUrl } from '../../utils/storage';
+import { fileToDataUrl, loadMemories, saveMemories } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
-import { saveCloudData, onCloudDataLoaded, loadMemoriesFromLocal, saveMemoriesToLocal } from '../../utils/cloudStore';
+import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
 import { Camera, Plus, Trash2, Heart, Calendar } from 'lucide-react';
 
-const DEFAULT_MEMORIES: MemoryItem[] = [
-  {
-    id: 'm1',
-    date: 'Our First Date',
-    title: 'Butterflies & Shy Smiles',
-    description: 'When we first met, couldn’t stop smiling and heart was beating 200 bpm!',
-    emoji: '☕',
-  },
-  {
-    id: 'm2',
-    date: 'Late Night Talk',
-    title: 'Talking Until 3 AM',
-    description: 'Realized we could talk about everything and nothing forever.',
-    emoji: '🌙',
-  },
-  {
-    id: 'm3',
-    date: 'Spontaneous Day Out',
-    title: 'Ice Cream & Stolen Kisses',
-    description: 'Walking hand in hand, eating dessert, and feeling like the happiest people in the world.',
-    emoji: '🍦',
-  },
-];
-
 export const MemoryWall: React.FC = () => {
   const { profile, currentUserName, partnerName } = useCouple();
-  const [memories, setMemories] = useState<MemoryItem[]>(() => {
-    const local = loadMemoriesFromLocal();
-    return local && local.length > 0 ? local : DEFAULT_MEMORIES;
-  });
+  const [memories, setMemories] = useState<MemoryItem[]>(loadMemories);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -49,11 +22,15 @@ export const MemoryWall: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    saveMemoriesToLocal(memories);
+    saveMemories(memories);
     saveCloudData({ memories });
   }, [memories]);
 
   useEffect(() => {
+    // Refresh on mount from local storage vault
+    const local = loadMemories();
+    if (local && local.length > 0) setMemories(local);
+
     const unsubCloud = onCloudDataLoaded((cloudData) => {
       if (Array.isArray(cloudData.memories) && cloudData.memories.length > 0) {
         setMemories(cloudData.memories);
@@ -63,13 +40,21 @@ export const MemoryWall: React.FC = () => {
     const unsubRealtime = realtimeHub.subscribe((payload) => {
       if (payload.type === 'MEMORY_UPDATE' && Array.isArray(payload.data?.memories)) {
         setMemories(payload.data.memories);
-        saveMemoriesToLocal(payload.data.memories);
+        saveMemories(payload.data.memories);
       }
     });
+
+    const handleMemoriesSync = (e: any) => {
+      if (Array.isArray(e.detail) && e.detail.length > 0) {
+        setMemories(e.detail);
+      }
+    };
+    window.addEventListener('love_app_memories_sync', handleMemoriesSync);
 
     return () => {
       unsubCloud();
       unsubRealtime();
+      window.removeEventListener('love_app_memories_sync', handleMemoriesSync);
     };
   }, []);
 
@@ -100,6 +85,7 @@ export const MemoryWall: React.FC = () => {
 
     const updated = [newMem, ...memories];
     setMemories(updated);
+    saveMemories(updated);
     setNewTitle('');
     setNewDate('');
     setNewDesc('');
@@ -123,19 +109,22 @@ export const MemoryWall: React.FC = () => {
     });
   };
 
-  const handleDelete = (id: string) => {
-    const updated = memories.filter((m) => m.id !== id);
-    setMemories(updated);
-    soundFx.playPop(420, 0.05);
+  const handleDelete = (id: string, title?: string) => {
+    if (window.confirm(`Delete memory "${title || 'this memory'}"?`)) {
+      const updated = memories.filter((m) => m.id !== id);
+      setMemories(updated);
+      saveMemories(updated);
+      soundFx.playPop(420, 0.05);
 
-    realtimeHub.publish({
-      type: 'MEMORY_UPDATE',
-      clientId: getClientId(),
-      senderRole: profile.currentUserRole,
-      senderName: currentUserName,
-      data: { memories: updated },
-      timestamp: Date.now(),
-    });
+      realtimeHub.publish({
+        type: 'MEMORY_UPDATE',
+        clientId: getClientId(),
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+        data: { memories: updated },
+        timestamp: Date.now(),
+      });
+    }
   };
 
   return (
@@ -208,7 +197,7 @@ export const MemoryWall: React.FC = () => {
                 </span>
                 <button
                   type="button"
-                  onClick={() => handleDelete(mem.id)}
+                  onClick={() => handleDelete(mem.id, mem.title)}
                   title="Remove memory"
                   className="hover:text-rose-600 transition p-1"
                 >

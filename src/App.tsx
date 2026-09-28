@@ -235,7 +235,7 @@ const MainContent: React.FC = () => {
             onClick={() => {
               if (
                 window.confirm(
-                  'Reset affection counters (kisses, hugs, etc.) and coupons? Your written dreams, love notes, and photos will remain safely preserved.'
+                  'Reset affection counters (kisses, hugs, etc.) and coupons? Your written dreams, love notes, milestones, memory wall, and photos will remain safely preserved forever.'
                 )
               ) {
                 resetAllData();

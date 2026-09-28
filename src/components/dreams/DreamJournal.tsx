@@ -74,6 +74,7 @@ export const DreamJournal: React.FC = () => {
 
     const updated = [newDream, ...dreams];
     setDreams(updated);
+    saveDreams(updated);
     setDreamTitle('');
     setDreamContent('');
     setShowAddModal(false);

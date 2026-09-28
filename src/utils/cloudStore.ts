@@ -17,6 +17,8 @@ import {
   loadStats,
   loadProfile,
   saveProfile,
+  loadMemories,
+  saveMemories,
   isCustomPhoto,
 } from './storage';
 
@@ -72,21 +74,11 @@ function notifyListeners(data: CloudCoupleData) {
 }
 
 export function loadMemoriesFromLocal(): MemoryItem[] {
-  try {
-    const raw = localStorage.getItem('love_app_memories_v1');
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // Ignore
-  }
-  return [];
+  return loadMemories();
 }
 
 export function saveMemoriesToLocal(memories: MemoryItem[]) {
-  try {
-    localStorage.setItem('love_app_memories_v1', JSON.stringify(memories));
-  } catch {
-    // Ignore
-  }
+  saveMemories(memories);
 }
 
 export async function fetchCloudData(): Promise<CloudCoupleData | null> {
