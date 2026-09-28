@@ -117,12 +117,23 @@ export const WouldYouRather: React.FC = () => {
   const [questions, setQuestions] = useState<TelepathyQuestion[]>(CURATED_QUESTIONS);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
-  // Directly track My Choice and Partner Choice for 100% deterministic, collision-free sync
+  // ─── Peer-to-peer vote state ────────────────────────────────────────
+  // myChoice   = what THIS device's user selected
+  // partnerChoice = what the OTHER device's user selected (received over network)
   const [myChoice, setMyChoice] = useState<'A' | 'B' | null>(null);
   const [partnerChoice, setPartnerChoice] = useState<'A' | 'B' | null>(null);
   const [isRevealed, setIsRevealed] = useState<boolean>(false);
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<number | null>(null);
   const [nudgeMessage, setNudgeMessage] = useState<string>('');
+
+  // A unique ID per round, incremented on every question advance.
+  // Prevents stale/delayed messages from a previous round from corrupting the current one.
+  const [roundId, setRoundId] = useState<number>(0);
+
+  // Track whether THIS device is the "leader" for auto-advance.
+  // Only the device that triggers the reveal runs the countdown timer.
+  // The follower simply receives ADVANCE_QUESTION from the leader.
+  const isAutoAdvanceLeaderRef = useRef<boolean>(false);
 
   const [score, setScore] = useState<TelepathyScore>(() => loadTelepathyScore());
   const [showHistory, setShowHistory] = useState<boolean>(false);
@@ -135,9 +146,12 @@ export const WouldYouRather: React.FC = () => {
   const [newOptBText, setNewOptBText] = useState<string>('');
   const [newOptBEmoji, setNewOptBEmoji] = useState<string>('💖');
 
-  // Stable references for realtime callback
+  // ─── Stable refs for use inside realtime callbacks ──────────────────
   const currentIndexRef = useRef(currentIndex);
   currentIndexRef.current = currentIndex;
+
+  const roundIdRef = useRef(roundId);
+  roundIdRef.current = roundId;
 
   const myChoiceRef = useRef(myChoice);
   myChoiceRef.current = myChoice;
@@ -159,7 +173,28 @@ export const WouldYouRather: React.FC = () => {
 
   const currentQ = questions[currentIndex % questions.length];
 
-  // Helper to publish messages over realtimeHub
+  // ─── Helpers ────────────────────────────────────────────────────────
+
+  /** Clear all pending timers */
+  const clearTimers = () => {
+    if (autoAdvanceTimerRef.current) { clearTimeout(autoAdvanceTimerRef.current); autoAdvanceTimerRef.current = null; }
+    if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+  };
+
+  /** Reset the round state to a fresh question */
+  const resetRoundState = (nextIdx: number, nextRound: number) => {
+    clearTimers();
+    setCurrentIndex(nextIdx);
+    setRoundId(nextRound);
+    setMyChoice(null);
+    setPartnerChoice(null);
+    setIsRevealed(false);
+    setAutoAdvanceCountdown(null);
+    setNudgeMessage('');
+    isAutoAdvanceLeaderRef.current = false;
+  };
+
+  /** Publish a TELEPATHY_EVENT to the partner's device */
   const broadcast = (action: string, payload: any) => {
     realtimeHub.publish({
       type: 'TELEPATHY_EVENT',
@@ -171,13 +206,21 @@ export const WouldYouRather: React.FC = () => {
     });
   };
 
-  // Perform Reveal logic and record score
+  // ─── Core game actions ──────────────────────────────────────────────
+
+  /**
+   * Record the reveal result and play effects.
+   * Called exactly once per reveal per device.
+   * @param isLeader - true if THIS device should run the auto-advance countdown
+   */
   const executeReveal = (
     myC: 'A' | 'B' | null,
     partnerC: 'A' | 'B' | null,
     qIndex: number,
-    shouldBroadcast = false
+    isLeader: boolean,
   ) => {
+    if (isRevealedRef.current) return; // Already revealed this round
+
     setIsRevealed(true);
     isRevealedRef.current = true;
     setMyChoice(myC);
@@ -186,7 +229,7 @@ export const WouldYouRather: React.FC = () => {
     const bothVoted = Boolean(myC && partnerC);
     const isMatch = Boolean(bothVoted && myC === partnerC);
 
-    // Only count towards telepathy score if BOTH partners genuinely participated!
+    // Only record score if BOTH partners actually voted
     if (bothVoted && myC && partnerC) {
       const targetQ = questionsRef.current[qIndex % questionsRef.current.length];
       const isBf = profile.currentUserRole === 'boyfriend';
@@ -227,29 +270,30 @@ export const WouldYouRather: React.FC = () => {
       soundFx.playPop(550, 0.08);
     }
 
-    if (shouldBroadcast) {
-      broadcast('FORCE_REVEAL', {
-        questionIndex: qIndex,
-        choiceFromSender: myC,
-        choiceFromReceiver: partnerC,
-      });
+    // Only the LEADER device starts the auto-advance countdown.
+    // The follower device will receive ADVANCE_QUESTION from the leader.
+    if (isLeader) {
+      isAutoAdvanceLeaderRef.current = true;
+      startAutoAdvance();
+    } else {
+      // Follower: show the countdown visually but don't fire handleNext
+      isAutoAdvanceLeaderRef.current = false;
+      startCountdownDisplay();
     }
-
-    // Begin countdown to next dilemma so both advance seamlessly
-    startAutoAdvance();
   };
 
-  // Automatic countdown timer before advancing to the next question
+  /**
+   * Leader-only: start real countdown that will broadcast ADVANCE_QUESTION.
+   */
   const startAutoAdvance = () => {
-    if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-
+    clearTimers();
     setAutoAdvanceCountdown(4);
 
     countdownIntervalRef.current = setInterval(() => {
       setAutoAdvanceCountdown((prev) => {
         if (prev === null || prev <= 1) {
           clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
           return 0;
         }
         return prev - 1;
@@ -257,58 +301,95 @@ export const WouldYouRather: React.FC = () => {
     }, 1000);
 
     autoAdvanceTimerRef.current = setTimeout(() => {
-      handleNext(true); // broadcast next question
+      autoAdvanceTimerRef.current = null;
+      advanceToNext(true);
     }, 4200);
   };
 
-  // Advance to next question for both partners
-  const handleNext = (shouldBroadcast = true) => {
-    if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+  /**
+   * Follower-only: show countdown display for visual sync, but do NOT fire advance.
+   * The advance will come from the leader's ADVANCE_QUESTION broadcast.
+   */
+  const startCountdownDisplay = () => {
+    clearTimers();
+    setAutoAdvanceCountdown(4);
 
+    countdownIntervalRef.current = setInterval(() => {
+      setAutoAdvanceCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Safety net: if leader's ADVANCE_QUESTION never arrives within 7s, advance locally
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      if (isRevealedRef.current) {
+        advanceToNext(false); // Don't broadcast — assume leader already did
+      }
+    }, 7000);
+  };
+
+  /**
+   * Advance to the next question.
+   * @param shouldBroadcast - true if this device should notify the partner
+   */
+  const advanceToNext = (shouldBroadcast: boolean) => {
     const nextIdx = (currentIndexRef.current + 1) % questionsRef.current.length;
-    setCurrentIndex(nextIdx);
-    setMyChoice(null);
-    setPartnerChoice(null);
-    setIsRevealed(false);
-    setAutoAdvanceCountdown(null);
-    setNudgeMessage('');
+    const nextRound = roundIdRef.current + 1;
+    resetRoundState(nextIdx, nextRound);
     soundFx.playPop(480, 0.08);
 
     if (shouldBroadcast) {
-      broadcast('ADVANCE_QUESTION', { nextIndex: nextIdx });
+      broadcast('ADVANCE_QUESTION', { nextIndex: nextIdx, roundId: nextRound });
     }
   };
 
-  // Local Vote click
+  /** User clicks an option (A or B) */
   const handleVote = (choice: 'A' | 'B') => {
-    if (myChoice || isRevealed) return; // already voted or revealed
+    if (myChoiceRef.current || isRevealedRef.current) return; // Already voted or revealed
 
     setMyChoice(choice);
+    myChoiceRef.current = choice;
     soundFx.playPop(600, 0.08);
 
-    const existingPartnerChoice = partnerChoiceRef.current;
-
-    // Send my vote to partner immediately
+    // Broadcast vote to partner with current question & round context
     broadcast('PARTNER_VOTED', {
       questionIndex: currentIndexRef.current,
+      roundId: roundIdRef.current,
       choice,
       senderName: currentUserName,
     });
 
-    // If partner had already voted, both are now done — trigger reveal!
+    // If partner had already voted → both are done → auto-reveal!
+    // This device is the "leader" because it completed the pair.
+    const existingPartnerChoice = partnerChoiceRef.current;
     if (existingPartnerChoice) {
       executeReveal(choice, existingPartnerChoice, currentIndexRef.current, true);
+      // Broadcast reveal event so partner knows to reveal too
+      broadcast('BOTH_VOTED_REVEAL', {
+        questionIndex: currentIndexRef.current,
+        roundId: roundIdRef.current,
+        senderChoice: choice,
+      });
     }
   };
 
-  // Manual Reveal button (when partner hasn't answered yet or skipping)
-  const handleManualReveal = () => {
-    if (isRevealed) return;
-    executeReveal(myChoiceRef.current, partnerChoiceRef.current, currentIndexRef.current, true);
+  /** User clicks "Skip Dilemma" to move to next question without answering */
+  const handleSkip = () => {
+    advanceToNext(true);
   };
 
-  // Nudge partner to vote
+  /** User clicks "Next Dilemma Now" during the reveal countdown */
+  const handleNextNow = () => {
+    advanceToNext(true);
+  };
+
+  /** Nudge partner to vote */
   const handleNudgePartner = () => {
     soundFx.playCelebration();
     confetti({
@@ -325,88 +406,111 @@ export const WouldYouRather: React.FC = () => {
     });
   };
 
-  // Persistent Real-time synchronization
+  // ─── Real-time synchronization ─────────────────────────────────────
   useEffect(() => {
-    // Request current state from partner on mount
+    // Ask partner for current state on mount
     broadcast('REQUEST_SYNC', {});
 
     const unsub = realtimeHub.subscribe((msg) => {
-      if (msg.type === 'TELEPATHY_EVENT' && msg.data) {
-        const { action, payload } = msg.data;
+      if (msg.type !== 'TELEPATHY_EVENT' || !msg.data) return;
+      const { action, payload } = msg.data;
 
-        if (action === 'REQUEST_SYNC') {
-          // Send current state to newly joined partner
-          broadcast('SYNC_STATE', {
-            questionIndex: currentIndexRef.current,
-            senderChoice: myChoiceRef.current,
-            receiverChoice: partnerChoiceRef.current,
-            isRevealed: isRevealedRef.current,
-          });
-        } else if (action === 'SYNC_STATE') {
-          if (payload) {
-            setCurrentIndex(payload.questionIndex ?? 0);
-            setPartnerChoice(payload.senderChoice ?? null);
-            setIsRevealed(Boolean(payload.isRevealed));
-          }
-        } else if (action === 'PARTNER_VOTED') {
-          // Partner has voted on their screen!
-          if (payload.questionIndex !== undefined) {
-            setCurrentIndex(payload.questionIndex);
-          }
+      if (action === 'REQUEST_SYNC') {
+        // Partner just joined/refreshed → send them our current state
+        broadcast('SYNC_STATE', {
+          questionIndex: currentIndexRef.current,
+          roundId: roundIdRef.current,
+          myChoice: myChoiceRef.current,       // What I chose (their partner's choice)
+          isRevealed: isRevealedRef.current,
+        });
 
-          setPartnerChoice(payload.choice);
-          soundFx.playPop(520, 0.05);
+      } else if (action === 'SYNC_STATE') {
+        if (!payload) return;
+        const incomingIdx = payload.questionIndex ?? 0;
+        const incomingRound = payload.roundId ?? 0;
 
-          const myExistingChoice = myChoiceRef.current;
-
-          // If I have also already voted, trigger reveal on this screen too!
-          if (myExistingChoice && !isRevealedRef.current) {
-            executeReveal(myExistingChoice, payload.choice, payload.questionIndex ?? currentIndexRef.current, false);
-          }
-        } else if (action === 'FORCE_REVEAL') {
-          // Remote reveal triggered!
-          if (payload.questionIndex !== undefined) {
-            setCurrentIndex(payload.questionIndex);
-          }
-          // The sender's choice is my partner's choice!
-          executeReveal(
-            myChoiceRef.current,
-            payload.choiceFromSender,
-            payload.questionIndex ?? currentIndexRef.current,
-            false
-          );
-        } else if (action === 'ADVANCE_QUESTION') {
-          // Question automatically changed by partner or countdown!
-          if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
-          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-
-          setCurrentIndex(payload.nextIndex);
-          setMyChoice(null);
-          setPartnerChoice(null);
-          setIsRevealed(false);
-          setAutoAdvanceCountdown(null);
-          setNudgeMessage('');
-          soundFx.playPop(480, 0.08);
-        } else if (action === 'NUDGE') {
-          soundFx.playCelebration();
-          confetti({
-            particleCount: 50,
-            spread: 70,
-            origin: { y: 0.5 },
-          });
-          setNudgeMessage(`${payload.senderName || 'Your partner'} wants you to pick your answer! 💕`);
-          setTimeout(() => setNudgeMessage(''), 4000);
-        } else if (action === 'ADD_CUSTOM') {
-          setQuestions((prev) => [...prev, payload.question]);
-          soundFx.playPop(580, 0.08);
+        // Accept sync if it's at least as recent as our current round
+        if (incomingRound >= roundIdRef.current) {
+          setCurrentIndex(incomingIdx);
+          currentIndexRef.current = incomingIdx;
+          setRoundId(incomingRound);
+          roundIdRef.current = incomingRound;
+          // Their "myChoice" is our "partnerChoice"
+          setPartnerChoice(payload.myChoice ?? null);
+          partnerChoiceRef.current = payload.myChoice ?? null;
+          setIsRevealed(Boolean(payload.isRevealed));
+          isRevealedRef.current = Boolean(payload.isRevealed);
         }
+
+      } else if (action === 'PARTNER_VOTED') {
+        // Partner voted! Guard: only accept if for our current question+round
+        const incomingIdx = payload.questionIndex;
+        const incomingRound = payload.roundId ?? roundIdRef.current;
+
+        if (incomingIdx !== currentIndexRef.current || incomingRound !== roundIdRef.current) {
+          return; // Stale message from a different round — ignore
+        }
+        if (isRevealedRef.current) return; // Already revealed
+
+        setPartnerChoice(payload.choice);
+        partnerChoiceRef.current = payload.choice;
+        soundFx.playPop(520, 0.05);
+
+        // If I also already voted → both done → auto-reveal!
+        // This device is the leader since we just completed the pair.
+        if (myChoiceRef.current) {
+          executeReveal(myChoiceRef.current, payload.choice, currentIndexRef.current, true);
+          broadcast('BOTH_VOTED_REVEAL', {
+            questionIndex: currentIndexRef.current,
+            roundId: roundIdRef.current,
+            senderChoice: myChoiceRef.current,
+          });
+        }
+
+      } else if (action === 'BOTH_VOTED_REVEAL') {
+        // Partner's device detected both voted and revealed — sync our reveal
+        const incomingIdx = payload.questionIndex;
+        const incomingRound = payload.roundId ?? roundIdRef.current;
+
+        if (incomingRound !== roundIdRef.current || incomingIdx !== currentIndexRef.current) {
+          return; // Stale — ignore
+        }
+        if (isRevealedRef.current) return; // Already revealed locally
+
+        // The sender's choice is my partnerChoice
+        const pChoice = payload.senderChoice as 'A' | 'B' | null;
+        setPartnerChoice(pChoice);
+        partnerChoiceRef.current = pChoice;
+
+        // Follower: the partner device is the leader for auto-advance
+        executeReveal(myChoiceRef.current, pChoice, currentIndexRef.current, false);
+
+      } else if (action === 'ADVANCE_QUESTION') {
+        // Partner (leader) is advancing to the next question
+        const nextIdx = payload.nextIndex;
+        const nextRound = payload.roundId ?? (roundIdRef.current + 1);
+
+        // Only accept if this is actually moving us forward (prevent going backward)
+        if (nextRound > roundIdRef.current || (nextRound === roundIdRef.current && nextIdx !== currentIndexRef.current)) {
+          resetRoundState(nextIdx, nextRound);
+          soundFx.playPop(480, 0.08);
+        }
+
+      } else if (action === 'NUDGE') {
+        soundFx.playCelebration();
+        confetti({ particleCount: 50, spread: 70, origin: { y: 0.5 } });
+        setNudgeMessage(`${payload.senderName || 'Your partner'} wants you to pick your answer! 💕`);
+        setTimeout(() => setNudgeMessage(''), 4000);
+
+      } else if (action === 'ADD_CUSTOM') {
+        setQuestions((prev) => [...prev, payload.question]);
+        soundFx.playPop(580, 0.08);
       }
     });
 
     return () => {
       unsub();
-      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      clearTimers();
     };
   }, []);
 
@@ -423,11 +527,8 @@ export const WouldYouRather: React.FC = () => {
     const updated = [...questions, newQ];
     setQuestions(updated);
     const newIdx = updated.length - 1;
-    setCurrentIndex(newIdx);
-    setMyChoice(null);
-    setPartnerChoice(null);
-    setIsRevealed(false);
-    setAutoAdvanceCountdown(null);
+    const nextRound = roundIdRef.current + 1;
+    resetRoundState(newIdx, nextRound);
     setShowAddCustom(false);
     setNewTitle('');
     setNewOptAText('');
@@ -435,7 +536,7 @@ export const WouldYouRather: React.FC = () => {
 
     soundFx.playCelebration();
     broadcast('ADD_CUSTOM', { question: newQ });
-    broadcast('ADVANCE_QUESTION', { nextIndex: newIdx });
+    broadcast('ADVANCE_QUESTION', { nextIndex: newIdx, roundId: nextRound });
   };
 
   const matchPercentage =
@@ -696,8 +797,8 @@ export const WouldYouRather: React.FC = () => {
                 )
               ) : (
                 <>
-                  <Clock className="w-5 h-5 text-purple-500" />
-                  <span>Waiting for {partnerName}'s choice! ⏳</span>
+                  <Shuffle className="w-5 h-5 text-slate-500" />
+                  <span>Dilemma Skipped ⏭️</span>
                 </>
               )}
             </div>
@@ -708,7 +809,7 @@ export const WouldYouRather: React.FC = () => {
                   ? `${currentUserName} & ${partnerName} both picked Option ${myChoice}! Soulmate synchronicity!`
                   : `${currentUserName} picked Option ${myChoice}, while ${partnerName} picked Option ${partnerChoice}! Unique tastes make your bond special.`
               ) : (
-                `Only ${myChoice ? currentUserName : partnerName} has voted so far. Telepathy harmony updates once both of you vote!`
+                'This dilemma was skipped. Moving on to the next one!'
               )}
             </p>
 
@@ -726,7 +827,15 @@ export const WouldYouRather: React.FC = () => {
         <div className="flex items-center justify-center gap-3 pt-2 flex-wrap">
           {!isRevealed ? (
             <>
-              {/* If I have chosen, but partner hasn't */}
+              {/* Waiting indicator when I've voted but partner hasn't */}
+              {myChoice && !partnerChoice && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold animate-pulse">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Waiting for {partnerName} to choose...</span>
+                </div>
+              )}
+
+              {/* Nudge partner button */}
               {myChoice && !partnerChoice && (
                 <button
                   type="button"
@@ -738,22 +847,20 @@ export const WouldYouRather: React.FC = () => {
                 </button>
               )}
 
-              {/* Reveal Answers button */}
+              {/* Skip this dilemma entirely (move to next without answering) */}
               <button
                 type="button"
-                onClick={handleManualReveal}
-                className="flex items-center gap-1.5 px-6 py-2.5 rounded-2xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 hover:scale-102 active:scale-98 shadow-md shadow-purple-500/25 transition cursor-pointer"
+                onClick={handleSkip}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-2xl font-bold text-xs text-slate-500 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>
-                  {bothVoted ? 'Reveal Both Answers!' : 'Reveal / Skip Dilemma'}
-                </span>
+                <ChevronRight className="w-3.5 h-3.5" />
+                <span>Skip Dilemma</span>
               </button>
             </>
           ) : (
             <button
               type="button"
-              onClick={() => handleNext(true)}
+              onClick={handleNextNow}
               className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 hover:scale-102 active:scale-98 shadow-md shadow-pink-500/25 transition cursor-pointer"
             >
               <span>Next Dilemma Now</span>
