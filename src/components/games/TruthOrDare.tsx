@@ -502,93 +502,80 @@ export const TruthOrDare: React.FC = () => {
       {/* Main Interactive Stage */}
       <div className="flex flex-col items-center justify-center space-y-6 py-2">
         {/* The Card */}
-        <div className="relative w-full max-w-md h-72 sm:h-80 perspective-1000">
-          <div
-            className={`w-full h-full rounded-3xl transition-transform duration-500 preserve-3d shadow-xl relative ${
-              isFlipped ? 'rotate-y-0' : 'rotate-y-180'
-            }`}
-          >
-            {/* Front of Card (Prompt Revealed) */}
-            <div className="absolute inset-0 backface-hidden bg-gradient-to-br from-white via-rose-50/50 to-pink-50/80 rounded-3xl border-2 border-rose-200 p-6 flex flex-col justify-between items-center text-center shadow-lg">
-              {currentPrompt ? (
-                <>
-                  <div className="flex items-center justify-between w-full border-b border-rose-100 pb-2">
-                    <span
-                      className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                        currentPrompt.type === 'truth'
-                          ? 'bg-pink-100 text-pink-700'
-                          : 'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      {currentPrompt.type === 'truth' ? '💌 Romantic Truth' : '🔥 Passionate Dare'}
-                    </span>
+        <div className="relative w-full max-w-md min-h-[300px] flex items-center justify-center">
+          {currentPrompt ? (
+            /* Front of Card (Prompt Revealed) */
+            <div className="w-full min-h-[300px] bg-gradient-to-br from-white via-rose-50/50 to-pink-50/80 rounded-3xl border-2 border-rose-200 p-6 flex flex-col justify-between items-center text-center shadow-xl animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between w-full border-b border-rose-100 pb-2">
+                <span
+                  className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                    currentPrompt.type === 'truth'
+                      ? 'bg-pink-100 text-pink-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {currentPrompt.type === 'truth' ? '💌 Romantic Truth' : '🔥 Passionate Dare'}
+                </span>
 
-                    <span className="text-xs font-extrabold text-slate-400 capitalize">
-                      For: {targetPersonName}
-                    </span>
-                  </div>
+                <span className="text-xs font-extrabold text-slate-500 capitalize">
+                  For: {targetPersonName}
+                </span>
+              </div>
 
-                  <div className="space-y-3 px-2">
-                    <div className="text-4xl animate-bounce">{currentPrompt.emoji}</div>
-                    <p className="font-bold text-sm sm:text-base text-slate-800 leading-relaxed font-serif">
-                      "{currentPrompt.text}"
-                    </p>
-                  </div>
+              <div className="space-y-3 px-2 py-4">
+                <div className="text-4xl animate-bounce">{currentPrompt.emoji}</div>
+                <p className="font-bold text-sm sm:text-base text-slate-800 leading-relaxed font-serif">
+                  "{currentPrompt.text}"
+                </p>
+              </div>
 
-                  {/* Actions / Timer if Dare */}
-                  <div className="w-full flex items-center justify-between pt-2 border-t border-rose-100">
-                    {currentPrompt.type === 'dare' ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsTimerRunning((prev) => !prev)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
-                        >
-                          {isTimerRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                          <span>{timerSeconds}s</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsTimerRunning(false);
-                            setTimerSeconds(30);
-                          }}
-                          className="p-1 text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                          title="Reset Timer"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-slate-400 italic">Speak from the heart 💖</span>
-                    )}
-
+              {/* Actions / Timer if Dare */}
+              <div className="w-full flex items-center justify-between pt-2 border-t border-rose-100">
+                {currentPrompt.type === 'dare' ? (
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleCompletePrompt}
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-black text-xs text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:scale-102 active:scale-98 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+                      onClick={() => setIsTimerRunning((prev) => !prev)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Completed!</span>
+                      {isTimerRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                      <span>{timerSeconds}s</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTimerRunning(false);
+                        setTimerSeconds(30);
+                      }}
+                      className="p-1 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                      title="Reset Timer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
                     </button>
                   </div>
-                </>
-              ) : (
-                <div className="my-auto space-y-2">
-                  <Flame className="w-12 h-12 text-rose-300 mx-auto" />
-                  <p className="text-sm font-bold text-slate-400">Pick Truth or Dare below to begin!</p>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">Speak from the heart 💖</span>
+                )}
 
-            {/* Back of Card (Cover / Unrevealed) */}
-            <div className="absolute inset-0 backface-hidden rotate-y-180 bg-gradient-to-br from-rose-500 via-pink-600 to-amber-500 rounded-3xl border-2 border-white/40 p-6 flex flex-col justify-between items-center text-white text-center shadow-2xl">
+                <button
+                  type="button"
+                  onClick={handleCompletePrompt}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl font-black text-xs text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:scale-102 active:scale-98 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Completed!</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Cover Card (Before First Draw) */
+            <div className="w-full min-h-[300px] bg-gradient-to-br from-rose-500 via-pink-600 to-amber-500 rounded-3xl border-2 border-white/40 p-6 flex flex-col justify-between items-center text-white text-center shadow-xl animate-in fade-in duration-200">
               <div className="w-full flex justify-between text-xs text-white/80 font-bold">
                 <span>🌹 Whispers & Dares</span>
                 <span>👑 Vishvesh & Laura</span>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 py-4">
                 <Flame className="w-16 h-16 mx-auto animate-pulse text-amber-200" />
                 <h3 className="text-lg font-black tracking-wide">Ready for a Romantic Secret?</h3>
                 <p className="text-xs text-pink-100 max-w-xs">
@@ -596,9 +583,11 @@ export const TruthOrDare: React.FC = () => {
                 </p>
               </div>
 
-              <span className="text-[11px] font-bold text-white/70">Tap a button below to flip 🎴</span>
+              <span className="text-[11px] font-bold text-white/80 bg-white/20 px-3 py-1 rounded-full">
+                Tap Truth, Dare, or Surprise Me below! ✨
+              </span>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Draw Buttons */}
