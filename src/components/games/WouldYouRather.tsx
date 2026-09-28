@@ -111,23 +111,16 @@ const CURATED_QUESTIONS: TelepathyQuestion[] = [
   },
 ];
 
-interface RevealOutcome {
-  bothVoted: boolean;
-  isMatch: boolean;
-  boyfriendChoice: 'A' | 'B' | null;
-  girlfriendChoice: 'A' | 'B' | null;
-}
-
 export const WouldYouRather: React.FC = () => {
-  const { profile, currentUserName, partnerName, switchCurrentUserRole } = useCouple();
+  const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, switchCurrentUserRole } = useCouple();
 
   const [questions, setQuestions] = useState<TelepathyQuestion[]>(CURATED_QUESTIONS);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
-  // Synchronized couple choices
-  const [boyfriendChoice, setBoyfriendChoice] = useState<'A' | 'B' | null>(null);
-  const [girlfriendChoice, setGirlfriendChoice] = useState<'A' | 'B' | null>(null);
-  const [revealOutcome, setRevealOutcome] = useState<RevealOutcome | null>(null);
+  // Directly track My Choice and Partner Choice for 100% deterministic, collision-free sync
+  const [myChoice, setMyChoice] = useState<'A' | 'B' | null>(null);
+  const [partnerChoice, setPartnerChoice] = useState<'A' | 'B' | null>(null);
+  const [isRevealed, setIsRevealed] = useState<boolean>(false);
   const [autoAdvanceCountdown, setAutoAdvanceCountdown] = useState<number | null>(null);
   const [nudgeMessage, setNudgeMessage] = useState<string>('');
 
@@ -135,25 +128,25 @@ export const WouldYouRather: React.FC = () => {
   const [showHistory, setShowHistory] = useState<boolean>(false);
   const [showAddCustom, setShowAddCustom] = useState<boolean>(false);
 
-  // New custom dilemma inputs
+  // Custom dilemma state
   const [newTitle, setNewTitle] = useState<string>('');
   const [newOptAText, setNewOptAText] = useState<string>('');
   const [newOptAEmoji, setNewOptAEmoji] = useState<string>('✨');
   const [newOptBText, setNewOptBText] = useState<string>('');
   const [newOptBEmoji, setNewOptBEmoji] = useState<string>('💖');
 
-  // Stable references for realtime callbacks
+  // Stable references for realtime callback
   const currentIndexRef = useRef(currentIndex);
   currentIndexRef.current = currentIndex;
 
-  const boyfriendChoiceRef = useRef(boyfriendChoice);
-  boyfriendChoiceRef.current = boyfriendChoice;
+  const myChoiceRef = useRef(myChoice);
+  myChoiceRef.current = myChoice;
 
-  const girlfriendChoiceRef = useRef(girlfriendChoice);
-  girlfriendChoiceRef.current = girlfriendChoice;
+  const partnerChoiceRef = useRef(partnerChoice);
+  partnerChoiceRef.current = partnerChoice;
 
-  const revealOutcomeRef = useRef(revealOutcome);
-  revealOutcomeRef.current = revealOutcome;
+  const isRevealedRef = useRef(isRevealed);
+  isRevealedRef.current = isRevealed;
 
   const questionsRef = useRef(questions);
   questionsRef.current = questions;
@@ -164,8 +157,6 @@ export const WouldYouRather: React.FC = () => {
   const autoAdvanceTimerRef = useRef<any>(null);
   const countdownIntervalRef = useRef<any>(null);
 
-  const isBf = profile.currentUserRole === 'boyfriend';
-  const myChoice = isBf ? boyfriendChoice : girlfriendChoice;
   const currentQ = questions[currentIndex % questions.length];
 
   // Helper to publish messages over realtimeHub
@@ -175,36 +166,33 @@ export const WouldYouRather: React.FC = () => {
       clientId: getClientId(),
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
-      data: { action, payload, clientId: getClientId() },
+      data: { action, payload },
       timestamp: Date.now(),
     });
   };
 
   // Perform Reveal logic and record score
   const executeReveal = (
-    bfChoice: 'A' | 'B' | null,
-    gfChoice: 'A' | 'B' | null,
+    myC: 'A' | 'B' | null,
+    partnerC: 'A' | 'B' | null,
     qIndex: number,
     shouldBroadcast = false
   ) => {
-    const bothVoted = Boolean(bfChoice && gfChoice);
-    const isMatch = Boolean(bothVoted && bfChoice === gfChoice);
+    setIsRevealed(true);
+    isRevealedRef.current = true;
+    setMyChoice(myC);
+    setPartnerChoice(partnerC);
 
-    const outcome: RevealOutcome = {
-      bothVoted,
-      isMatch,
-      boyfriendChoice: bfChoice,
-      girlfriendChoice: gfChoice,
-    };
+    const bothVoted = Boolean(myC && partnerC);
+    const isMatch = Boolean(bothVoted && myC === partnerC);
 
-    setRevealOutcome(outcome);
-    revealOutcomeRef.current = outcome;
-    setBoyfriendChoice(bfChoice);
-    setGirlfriendChoice(gfChoice);
-
-    // Only record score if both actually took part in the round!
-    if (bothVoted && bfChoice && gfChoice) {
+    // Only count towards telepathy score if BOTH partners genuinely participated!
+    if (bothVoted && myC && partnerC) {
       const targetQ = questionsRef.current[qIndex % questionsRef.current.length];
+      const isBf = profile.currentUserRole === 'boyfriend';
+      const bfChoice = isBf ? myC : partnerC;
+      const gfChoice = isBf ? partnerC : myC;
+
       const updatedScore: TelepathyScore = {
         totalRounds: scoreRef.current.totalRounds + 1,
         totalMatches: isMatch ? scoreRef.current.totalMatches + 1 : scoreRef.current.totalMatches,
@@ -242,12 +230,12 @@ export const WouldYouRather: React.FC = () => {
     if (shouldBroadcast) {
       broadcast('FORCE_REVEAL', {
         questionIndex: qIndex,
-        boyfriendChoice: bfChoice,
-        girlfriendChoice: gfChoice,
+        choiceFromSender: myC,
+        choiceFromReceiver: partnerC,
       });
     }
 
-    // Begin automatic countdown to next dilemma so both advance seamlessly
+    // Begin countdown to next dilemma so both advance seamlessly
     startAutoAdvance();
   };
 
@@ -273,16 +261,16 @@ export const WouldYouRather: React.FC = () => {
     }, 4200);
   };
 
-  // Advance to next question
+  // Advance to next question for both partners
   const handleNext = (shouldBroadcast = true) => {
     if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
 
     const nextIdx = (currentIndexRef.current + 1) % questionsRef.current.length;
     setCurrentIndex(nextIdx);
-    setBoyfriendChoice(null);
-    setGirlfriendChoice(null);
-    setRevealOutcome(null);
+    setMyChoice(null);
+    setPartnerChoice(null);
+    setIsRevealed(false);
     setAutoAdvanceCountdown(null);
     setNudgeMessage('');
     soundFx.playPop(480, 0.08);
@@ -294,37 +282,30 @@ export const WouldYouRather: React.FC = () => {
 
   // Local Vote click
   const handleVote = (choice: 'A' | 'B') => {
-    if (myChoice || revealOutcome) return; // already voted or revealed
+    if (myChoice || isRevealed) return; // already voted or revealed
 
-    const newBf = isBf ? choice : boyfriendChoiceRef.current;
-    const newGf = isBf ? girlfriendChoiceRef.current : choice;
-
-    if (isBf) setBoyfriendChoice(choice);
-    else setGirlfriendChoice(choice);
-
+    setMyChoice(choice);
     soundFx.playPop(600, 0.08);
 
-    // If both partners have now voted, execute reveal immediately!
-    if (newBf && newGf) {
-      executeReveal(newBf, newGf, currentIndexRef.current, true);
-    } else {
-      broadcast('VOTE', {
-        questionIndex: currentIndexRef.current,
-        role: profile.currentUserRole,
-        choice,
-      });
+    const existingPartnerChoice = partnerChoiceRef.current;
+
+    // Send my vote to partner immediately
+    broadcast('PARTNER_VOTED', {
+      questionIndex: currentIndexRef.current,
+      choice,
+      senderName: currentUserName,
+    });
+
+    // If partner had already voted, both are now done — trigger reveal!
+    if (existingPartnerChoice) {
+      executeReveal(choice, existingPartnerChoice, currentIndexRef.current, true);
     }
   };
 
   // Manual Reveal button (when partner hasn't answered yet or skipping)
   const handleManualReveal = () => {
-    if (revealOutcome) return;
-
-    const bf = boyfriendChoiceRef.current;
-    const gf = girlfriendChoiceRef.current;
-
-    // Do NOT fake partner choice! Accurately reflect who has voted
-    executeReveal(bf, gf, currentIndexRef.current, true);
+    if (isRevealed) return;
+    executeReveal(myChoiceRef.current, partnerChoiceRef.current, currentIndexRef.current, true);
   };
 
   // Nudge partner to vote
@@ -346,7 +327,7 @@ export const WouldYouRather: React.FC = () => {
 
   // Persistent Real-time synchronization
   useEffect(() => {
-    // Announce presence / request current question state
+    // Request current state from partner on mount
     broadcast('REQUEST_SYNC', {});
 
     const unsub = realtimeHub.subscribe((msg) => {
@@ -357,68 +338,52 @@ export const WouldYouRather: React.FC = () => {
           // Send current state to newly joined partner
           broadcast('SYNC_STATE', {
             questionIndex: currentIndexRef.current,
-            boyfriendChoice: boyfriendChoiceRef.current,
-            girlfriendChoice: girlfriendChoiceRef.current,
-            revealOutcome: revealOutcomeRef.current,
+            senderChoice: myChoiceRef.current,
+            receiverChoice: partnerChoiceRef.current,
+            isRevealed: isRevealedRef.current,
           });
         } else if (action === 'SYNC_STATE') {
           if (payload) {
             setCurrentIndex(payload.questionIndex ?? 0);
-            setBoyfriendChoice(payload.boyfriendChoice ?? null);
-            setGirlfriendChoice(payload.girlfriendChoice ?? null);
-            setRevealOutcome(payload.revealOutcome ?? null);
+            setPartnerChoice(payload.senderChoice ?? null);
+            setIsRevealed(Boolean(payload.isRevealed));
           }
-        } else if (action === 'VOTE') {
-          // Partner voted!
+        } else if (action === 'PARTNER_VOTED') {
+          // Partner has voted on their screen!
           if (payload.questionIndex !== undefined) {
             setCurrentIndex(payload.questionIndex);
           }
 
-          let newBf = boyfriendChoiceRef.current;
-          let newGf = girlfriendChoiceRef.current;
-
-          // Disambiguate partner's role:
-          // If the incoming message came from the other client, but their role payload is identical to our local role,
-          // map it cleanly to the opposite partner's role!
-          let assignedRole: 'boyfriend' | 'girlfriend' = payload.role;
-          if (payload.clientId && payload.clientId !== getClientId() && payload.role === profile.currentUserRole) {
-            assignedRole = profile.currentUserRole === 'boyfriend' ? 'girlfriend' : 'boyfriend';
-          }
-
-          if (assignedRole === 'boyfriend') {
-            newBf = payload.choice;
-            setBoyfriendChoice(payload.choice);
-          } else if (assignedRole === 'girlfriend') {
-            newGf = payload.choice;
-            setGirlfriendChoice(payload.choice);
-          }
-
+          setPartnerChoice(payload.choice);
           soundFx.playPop(520, 0.05);
 
-          // If both have now voted, trigger reveal on this device too!
-          if (newBf && newGf && !revealOutcomeRef.current) {
-            executeReveal(newBf, newGf, payload.questionIndex ?? currentIndexRef.current, false);
+          const myExistingChoice = myChoiceRef.current;
+
+          // If I have also already voted, trigger reveal on this screen too!
+          if (myExistingChoice && !isRevealedRef.current) {
+            executeReveal(myExistingChoice, payload.choice, payload.questionIndex ?? currentIndexRef.current, false);
           }
         } else if (action === 'FORCE_REVEAL') {
-          // Remote reveal triggered! Immediately reveal with exact choices on this screen too!
+          // Remote reveal triggered!
           if (payload.questionIndex !== undefined) {
             setCurrentIndex(payload.questionIndex);
           }
+          // The sender's choice is my partner's choice!
           executeReveal(
-            payload.boyfriendChoice ?? null,
-            payload.girlfriendChoice ?? null,
+            myChoiceRef.current,
+            payload.choiceFromSender,
             payload.questionIndex ?? currentIndexRef.current,
             false
           );
         } else if (action === 'ADVANCE_QUESTION') {
-          // Question automatically changed by partner or timer!
+          // Question automatically changed by partner or countdown!
           if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
           if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
 
           setCurrentIndex(payload.nextIndex);
-          setBoyfriendChoice(null);
-          setGirlfriendChoice(null);
-          setRevealOutcome(null);
+          setMyChoice(null);
+          setPartnerChoice(null);
+          setIsRevealed(false);
           setAutoAdvanceCountdown(null);
           setNudgeMessage('');
           soundFx.playPop(480, 0.08);
@@ -443,7 +408,7 @@ export const WouldYouRather: React.FC = () => {
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     };
-  }, [profile.currentUserRole]);
+  }, []);
 
   const handleAddCustomDilemma = () => {
     if (!newTitle.trim() || !newOptAText.trim() || !newOptBText.trim()) return;
@@ -459,9 +424,9 @@ export const WouldYouRather: React.FC = () => {
     setQuestions(updated);
     const newIdx = updated.length - 1;
     setCurrentIndex(newIdx);
-    setBoyfriendChoice(null);
-    setGirlfriendChoice(null);
-    setRevealOutcome(null);
+    setMyChoice(null);
+    setPartnerChoice(null);
+    setIsRevealed(false);
     setAutoAdvanceCountdown(null);
     setShowAddCustom(false);
     setNewTitle('');
@@ -476,7 +441,17 @@ export const WouldYouRather: React.FC = () => {
   const matchPercentage =
     score.totalRounds > 0 ? Math.round((score.totalMatches / score.totalRounds) * 100) : 100;
 
-  const isRevealed = Boolean(revealOutcome);
+  const bothVoted = Boolean(myChoice && partnerChoice);
+  const isMatch = Boolean(bothVoted && myChoice === partnerChoice);
+
+  // Figure out who picked Option A and Option B
+  const pickedA: string[] = [];
+  const pickedB: string[] = [];
+
+  if (myChoice === 'A') pickedA.push(currentUserName);
+  if (partnerChoice === 'A') pickedA.push(partnerName);
+  if (myChoice === 'B') pickedB.push(currentUserName);
+  if (partnerChoice === 'B') pickedB.push(partnerName);
 
   return (
     <div className="relative bg-gradient-to-b from-white/95 via-purple-50/40 to-pink-50/40 backdrop-blur-md rounded-3xl border border-purple-100 shadow-xl p-4 sm:p-7 space-y-5">
@@ -519,7 +494,7 @@ export const WouldYouRather: React.FC = () => {
         </div>
       </div>
 
-      {/* Role Confirmation Pill (Ensures both devices know who is voting) */}
+      {/* Role Pill Switcher */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 bg-purple-50/70 p-2.5 rounded-2xl border border-purple-100 text-xs">
         <span className="font-semibold text-slate-600">
           This device is voting as:{' '}
@@ -552,27 +527,27 @@ export const WouldYouRather: React.FC = () => {
         </div>
       </div>
 
-      {/* Live Status Indicators (Vishvesh & Laura lock-in status) */}
+      {/* Live Status Indicators (My choice & Partner choice) */}
       <div className="flex items-center justify-between bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 text-xs">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full overflow-hidden border border-blue-400 shrink-0">
-            <img src={profile.boyfriendPhoto} alt={profile.boyfriendName} className="w-full h-full object-cover" />
+            <img src={currentUserPhoto} alt={currentUserName} className="w-full h-full object-cover" />
           </div>
-          <span className="font-bold text-slate-700">{profile.boyfriendName}:</span>
-          {boyfriendChoice ? (
+          <span className="font-bold text-slate-700">{currentUserName} (You):</span>
+          {myChoice ? (
             <span className="flex items-center gap-1 text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
               <Check className="w-3 h-3" /> Locked In!
             </span>
           ) : (
             <span className="flex items-center gap-1 text-slate-400 font-medium italic">
-              <Clock className="w-3 h-3 animate-spin" /> Thinking...
+              <Clock className="w-3 h-3 animate-spin" /> Pick an option below...
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-700">{profile.girlfriendName}:</span>
-          {girlfriendChoice ? (
+          <span className="font-bold text-slate-700">{partnerName}:</span>
+          {partnerChoice ? (
             <span className="flex items-center gap-1 text-pink-600 font-extrabold bg-pink-50 px-2 py-0.5 rounded-full border border-pink-200">
               <Check className="w-3 h-3" /> Locked In!
             </span>
@@ -582,7 +557,7 @@ export const WouldYouRather: React.FC = () => {
             </span>
           )}
           <div className="w-7 h-7 rounded-full overflow-hidden border border-pink-400 shrink-0">
-            <img src={profile.girlfriendPhoto} alt={profile.girlfriendName} className="w-full h-full object-cover" />
+            <img src={partnerPhoto} alt={partnerName} className="w-full h-full object-cover" />
           </div>
         </div>
       </div>
@@ -636,19 +611,15 @@ export const WouldYouRather: React.FC = () => {
               <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Chosen by:</span>
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                  {boyfriendChoice === 'A' && (
-                    <div className="flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[11px] font-bold">
-                      <img src={profile.boyfriendPhoto} alt="" className="w-4 h-4 rounded-full object-cover" />
-                      <span>{profile.boyfriendName}</span>
-                    </div>
-                  )}
-                  {girlfriendChoice === 'A' && (
-                    <div className="flex items-center gap-1 bg-pink-100 text-pink-800 px-2 py-0.5 rounded-full text-[11px] font-bold">
-                      <img src={profile.girlfriendPhoto} alt="" className="w-4 h-4 rounded-full object-cover" />
-                      <span>{profile.girlfriendName}</span>
-                    </div>
-                  )}
-                  {boyfriendChoice !== 'A' && girlfriendChoice !== 'A' && (
+                  {pickedA.map((name, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {pickedA.length === 0 && (
                     <span className="text-[11px] text-slate-400 italic">Neither</span>
                   )}
                 </div>
@@ -682,19 +653,15 @@ export const WouldYouRather: React.FC = () => {
               <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Chosen by:</span>
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                  {boyfriendChoice === 'B' && (
-                    <div className="flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[11px] font-bold">
-                      <img src={profile.boyfriendPhoto} alt="" className="w-4 h-4 rounded-full object-cover" />
-                      <span>{profile.boyfriendName}</span>
-                    </div>
-                  )}
-                  {girlfriendChoice === 'B' && (
-                    <div className="flex items-center gap-1 bg-pink-100 text-pink-800 px-2 py-0.5 rounded-full text-[11px] font-bold">
-                      <img src={profile.girlfriendPhoto} alt="" className="w-4 h-4 rounded-full object-cover" />
-                      <span>{profile.girlfriendName}</span>
-                    </div>
-                  )}
-                  {boyfriendChoice !== 'B' && girlfriendChoice !== 'B' && (
+                  {pickedB.map((name, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-0.5 rounded-full bg-pink-100 text-pink-800 text-[11px] font-bold"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {pickedB.length === 0 && (
                     <span className="text-[11px] text-slate-400 italic">Neither</span>
                   )}
                 </div>
@@ -704,19 +671,19 @@ export const WouldYouRather: React.FC = () => {
         </div>
 
         {/* Revealed Outcome Banner & Countdown */}
-        {isRevealed && revealOutcome && (
+        {isRevealed && (
           <div
             className={`p-4 rounded-2xl border text-center space-y-2 animate-fade-in ${
-              revealOutcome.bothVoted
-                ? revealOutcome.isMatch
+              bothVoted
+                ? isMatch
                   ? 'bg-gradient-to-r from-amber-50 via-pink-50 to-purple-50 border-amber-300 text-amber-950'
                   : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 text-blue-950'
                 : 'bg-gradient-to-r from-slate-50 to-purple-50 border-purple-200 text-slate-800'
             }`}
           >
             <div className="flex items-center justify-center gap-1.5 text-base font-black">
-              {revealOutcome.bothVoted ? (
-                revealOutcome.isMatch ? (
+              {bothVoted ? (
+                isMatch ? (
                   <>
                     <Sparkles className="w-5 h-5 text-amber-500 fill-amber-500 animate-spin" />
                     <span>✨ 100% Soul Telepathy Match! ✨</span>
@@ -730,18 +697,18 @@ export const WouldYouRather: React.FC = () => {
               ) : (
                 <>
                   <Clock className="w-5 h-5 text-purple-500" />
-                  <span>Single Partner Peek ⏳</span>
+                  <span>Waiting for {partnerName}'s choice! ⏳</span>
                 </>
               )}
             </div>
 
             <p className="text-xs text-slate-600">
-              {revealOutcome.bothVoted ? (
-                revealOutcome.isMatch
-                  ? `${profile.boyfriendName} & ${profile.girlfriendName} both picked the exact same choice! Soulmate synchronicity!`
-                  : `${profile.boyfriendName} picked Option ${revealOutcome.boyfriendChoice}, while ${profile.girlfriendName} picked Option ${revealOutcome.girlfriendChoice}! Unique tastes make your bond special.`
+              {bothVoted ? (
+                isMatch
+                  ? `${currentUserName} & ${partnerName} both picked Option ${myChoice}! Soulmate synchronicity!`
+                  : `${currentUserName} picked Option ${myChoice}, while ${partnerName} picked Option ${partnerChoice}! Unique tastes make your bond special.`
               ) : (
-                `Only one partner has answered so far. Harmony score updates only when both of you vote!`
+                `Only ${myChoice ? currentUserName : partnerName} has voted so far. Telepathy harmony updates once both of you vote!`
               )}
             </p>
 
@@ -760,7 +727,7 @@ export const WouldYouRather: React.FC = () => {
           {!isRevealed ? (
             <>
               {/* If I have chosen, but partner hasn't */}
-              {myChoice && !boyfriendChoiceRef.current && (
+              {myChoice && !partnerChoice && (
                 <button
                   type="button"
                   onClick={handleNudgePartner}
@@ -779,9 +746,7 @@ export const WouldYouRather: React.FC = () => {
               >
                 <Sparkles className="w-4 h-4" />
                 <span>
-                  {boyfriendChoice && girlfriendChoice
-                    ? 'Reveal Both Answers!'
-                    : 'Reveal / Skip Dilemma'}
+                  {bothVoted ? 'Reveal Both Answers!' : 'Reveal / Skip Dilemma'}
                 </span>
               </button>
             </>
@@ -821,7 +786,7 @@ export const WouldYouRather: React.FC = () => {
                     Add Your Custom Dilemma
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Create a dilemma for Vishvesh & Laura to vote on together!
+                    Create a dilemma for {currentUserName} & {partnerName} to vote on together!
                   </p>
                 </div>
               </div>
