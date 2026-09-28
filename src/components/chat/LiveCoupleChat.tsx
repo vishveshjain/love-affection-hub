@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCouple } from '../../context/CoupleContext';
-import { ChatMessage } from '../../types';
+import { ChatMessage, ChatAttachment } from '../../types';
 import { loadChatMessages, saveChatMessages, fileToDataUrl } from '../../utils/storage';
 import { soundFx } from '../../utils/audio';
 import { realtimeHub, getRoomKey, setRoomKey, getClientId, RealtimePayload } from '../../utils/realtime';
 import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
+import { processChatAttachment, formatFileSize } from '../../utils/attachmentService';
 import confetti from 'canvas-confetti';
 import {
   Send,
@@ -21,6 +22,17 @@ import {
   Check,
   Camera,
   Video,
+  Paperclip,
+  Image as ImageIcon,
+  Film,
+  FileText,
+  Music,
+  Download,
+  ExternalLink,
+  X,
+  Maximize2,
+  Loader2,
+  File as FileIcon,
 } from 'lucide-react';
 
 const LOVE_EMOJIS = ['💖', '💋', '🥰', '🫂', '💍', '🌹', '💌', '✨', '🍓', '🧸', '🥺', '👑', '🍰', '🌸'];
@@ -39,8 +51,17 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [tempRoomKey, setTempRoomKey] = useState(getRoomKey());
   const [copied, setCopied] = useState(false);
+
+  // Attachments State
+  const [stagedAttachments, setStagedAttachments] = useState<ChatAttachment[]>([]);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [uploadProgressText, setUploadProgressText] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [lightboxAttachment, setLightboxAttachment] = useState<ChatAttachment | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const chatPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleChatPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -51,6 +72,37 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
         console.error('Error updating profile photo from chat', err);
       }
     }
+  };
+
+  // Handle file selection from file input, drop, or paste
+  const handleFilesSelected = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    setIsProcessingFile(true);
+    soundFx.playPop(550, 0.04);
+
+    const processedList: ChatAttachment[] = [];
+    const fileArray = Array.from(files);
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      setUploadProgressText(`Uploading ${file.name} (${i + 1}/${fileArray.length})...`);
+      try {
+        const att = await processChatAttachment(file, (status) => setUploadProgressText(status));
+        processedList.push(att);
+      } catch (err) {
+        console.error('Error processing attachment', err);
+      }
+    }
+
+    setStagedAttachments((prev) => [...prev, ...processedList]);
+    setIsProcessingFile(false);
+    setUploadProgressText('');
+    soundFx.playPop(680, 0.08);
+  };
+
+  const handleRemoveStagedAttachment = (id: string) => {
+    setStagedAttachments((prev) => prev.filter((a) => a.id !== id));
+    soundFx.playPop(420, 0.05);
   };
 
   // Initialize and subscribe to real-time internet connection
@@ -131,8 +183,11 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
   }, [messages]);
 
   const handleSendMessage = async (textToSend?: string) => {
-    const text = (textToSend || inputText).trim();
-    if (!text) return;
+    const text = (textToSend !== undefined ? textToSend : inputText).trim();
+    if (!text && stagedAttachments.length === 0) return;
+
+    const attachmentsToSend = stagedAttachments.length > 0 ? [...stagedAttachments] : undefined;
+    const singleAttachment = stagedAttachments.length === 1 ? stagedAttachments[0] : undefined;
 
     const newMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -141,12 +196,25 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
       senderName: currentUserName,
       text,
       timestamp: Date.now(),
+      attachment: singleAttachment,
+      attachments: attachmentsToSend,
     };
 
     // Add locally immediately
     setMessages((prev) => [...prev, newMsg]);
     setInputText('');
+    setStagedAttachments([]);
     soundFx.playPop(520, 0.05);
+
+    // If attachments included, burst a small celebratory heart confetti
+    if (attachmentsToSend && attachmentsToSend.length > 0) {
+      confetti({
+        particleCount: 25,
+        spread: 50,
+        origin: { y: 0.8 },
+        colors: ['#f43f5e', '#fb7185', '#fda4af'],
+      });
+    }
 
     // Publish to the internet
     await realtimeHub.publish({
@@ -218,8 +286,67 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Helper to download an attachment
+  const triggerDownload = (att: ChatAttachment) => {
+    const a = document.createElement('a');
+    a.href = att.url;
+    a.download = att.name;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    soundFx.playPop(520, 0.04);
+  };
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesSelected(e.dataTransfer.files);
+    }
+  };
+
+  // Paste handler for screenshots or copied images
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      handleFilesSelected(e.clipboardData.files);
+    }
+  };
+
   return (
-    <div className="p-4 md:p-6 rounded-3xl glass-card border border-rose-200 shadow-xl max-w-3xl mx-auto flex flex-col h-[600px]">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onPaste={handlePaste}
+      className={`relative p-4 md:p-6 rounded-3xl glass-card border transition-all duration-200 shadow-xl max-w-3xl mx-auto flex flex-col h-[640px] ${
+        isDragging ? 'border-rose-400 ring-4 ring-rose-200/50 bg-rose-50/40' : 'border-rose-200'
+      }`}
+    >
+      {/* Drag & Drop Overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 z-40 rounded-3xl bg-rose-500/10 backdrop-blur-xs flex flex-col items-center justify-center p-6 border-4 border-dashed border-rose-400 text-center animate-fade-in pointer-events-none">
+          <Heart className="w-14 h-14 text-rose-500 fill-rose-400 animate-bounce mb-2" />
+          <h4 className="text-lg font-black text-rose-700">Drop attachments to share with {partnerName}! 💌</h4>
+          <p className="text-xs text-rose-600 mt-1">Photos, videos, audio clips, voice notes, documents & files</p>
+        </div>
+      )}
+
       {/* Chat Header */}
       <div className="flex items-center justify-between pb-3 border-b border-rose-100 shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-3">
@@ -266,9 +393,9 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
           </div>
         </div>
 
-        {/* Room Key & Love Buzz Action Buttons */}
+        {/* Room Key & Actions */}
         <div className="flex items-center gap-2">
-          {/* Quick Profile Picture Changer for Current User */}
+          {/* Quick Profile Picture Changer */}
           <input
             type="file"
             ref={chatPhotoInputRef}
@@ -280,7 +407,7 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
             type="button"
             onClick={() => chatPhotoInputRef.current?.click()}
             title={`Update your photo (${currentUserName})`}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-700 hover:text-rose-600 text-xs font-semibold shadow-xs hover:border-rose-300 transition active:scale-95"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-700 hover:text-rose-600 text-xs font-semibold shadow-xs hover:border-rose-300 transition active:scale-95 cursor-pointer"
           >
             <div className="w-4 h-4 rounded-full overflow-hidden border border-rose-400 shrink-0">
               <img src={currentUserPhoto} alt={currentUserName} className="w-full h-full object-cover" />
@@ -297,7 +424,7 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
               setShowRoomModal(true);
             }}
             title="Private Couple Room Code"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-600 hover:text-rose-600 text-xs font-semibold shadow-xs transition"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-600 hover:text-rose-600 text-xs font-semibold shadow-xs transition cursor-pointer"
           >
             <Key className="w-3.5 h-3.5 text-rose-500" />
             <span className="hidden sm:inline">Room:</span>
@@ -312,7 +439,7 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
               type="button"
               onClick={onStartVideoCall}
               title="Launch Romantic Video Call Sanctuary"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-pink-500/25 transition active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-pink-500/25 transition active:scale-95 cursor-pointer"
             >
               <Video className="w-3.5 h-3.5 fill-white text-white" />
               <span>Video Call</span>
@@ -324,7 +451,7 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
             type="button"
             onClick={handleSendLoveBuzz}
             title="Send an instant heart vibration buzz to your partner anywhere in the world!"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-rose-400/25 transition active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-rose-400/25 transition active:scale-95 cursor-pointer"
           >
             <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
             <span>Love Buzz!</span>
@@ -333,13 +460,13 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto py-4 px-2 space-y-3">
+      <div className="flex-1 overflow-y-auto py-4 px-2 space-y-3.5">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
             <Globe className="w-10 h-10 text-rose-300 mb-2 animate-bounce" />
             <p className="font-bold text-slate-700 text-sm">Your Private Internet Love Chat</p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs">
-              Say hello! Any message you type here will reach {partnerName}'s phone anywhere in the world in real time.
+              Say hello or send a photo! Any message you type here will reach {partnerName}'s phone anywhere in the world in real time.
             </p>
           </div>
         ) : (
@@ -351,6 +478,9 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
               msg.senderRole === 'boyfriend'
                 ? profile.boyfriendPhoto
                 : profile.girlfriendPhoto;
+
+            const allAttachments: ChatAttachment[] = msg.attachments || (msg.attachment ? [msg.attachment] : []);
+
             return (
               <div
                 key={msg.id}
@@ -362,7 +492,7 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
                   </div>
                 )}
 
-                <div className="max-w-[78%] sm:max-w-[65%]">
+                <div className="max-w-[85%] sm:max-w-[70%]">
                   <div
                     className={`relative p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-xs ${
                       isMe
@@ -370,8 +500,138 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
                         : 'bg-white text-slate-800 border border-rose-100 rounded-bl-none shadow-sm'
                     }`}
                   >
-                    <p className="break-words font-medium">{msg.text}</p>
+                    {/* Render Attachments (if present) */}
+                    {allAttachments.length > 0 && (
+                      <div className="space-y-2 mb-2">
+                        {allAttachments.map((att, idx) => (
+                          <div key={att.id || idx} className="rounded-xl overflow-hidden">
+                            {/* IMAGE ATTACHMENT */}
+                            {att.type === 'image' && (
+                              <div className="relative group rounded-xl overflow-hidden bg-black/5 border border-white/20">
+                                <img
+                                  src={att.url || att.thumbnail}
+                                  alt={att.name}
+                                  onClick={() => setLightboxAttachment(att)}
+                                  className="w-full max-h-64 object-cover rounded-xl cursor-pointer hover:scale-102 transition duration-300"
+                                  loading="lazy"
+                                />
+                                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxAttachment(att)}
+                                    className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition cursor-pointer"
+                                    title="View Fullscreen"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerDownload(att)}
+                                    className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80 transition cursor-pointer"
+                                    title="Download"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
 
+                            {/* VIDEO ATTACHMENT */}
+                            {att.type === 'video' && (
+                              <div className="relative rounded-xl overflow-hidden bg-black/90 border border-white/20">
+                                <video
+                                  src={att.url}
+                                  controls
+                                  playsInline
+                                  preload="metadata"
+                                  className="w-full max-h-64 rounded-xl object-contain bg-black"
+                                />
+                                <div className="flex items-center justify-between px-2 py-1 bg-black/60 text-[10px] text-white">
+                                  <span className="truncate max-w-[180px]">{att.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerDownload(att)}
+                                    className="hover:underline flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>{formatFileSize(att.size)}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* AUDIO ATTACHMENT */}
+                            {att.type === 'audio' && (
+                              <div
+                                className={`p-2.5 rounded-xl border flex flex-col gap-1.5 ${
+                                  isMe
+                                    ? 'bg-white/20 border-white/30 text-white'
+                                    : 'bg-rose-50/80 border-rose-200 text-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-xs font-bold">
+                                  <div className="flex items-center gap-1.5 truncate">
+                                    <Music className="w-4 h-4 shrink-0" />
+                                    <span className="truncate">{att.name}</span>
+                                  </div>
+                                  <span className="text-[10px] opacity-80 shrink-0">
+                                    {formatFileSize(att.size)}
+                                  </span>
+                                </div>
+                                <audio src={att.url} controls className="w-full h-8" />
+                              </div>
+                            )}
+
+                            {/* FILE / DOCUMENT ATTACHMENT */}
+                            {att.type === 'file' && (
+                              <div
+                                className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                                  isMe
+                                    ? 'bg-white/20 border-white/30 text-white'
+                                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 truncate">
+                                  <div
+                                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                      isMe ? 'bg-white/25 text-white' : 'bg-rose-100 text-rose-600'
+                                    }`}
+                                  >
+                                    <FileIcon className="w-5 h-5" />
+                                  </div>
+                                  <div className="truncate text-left">
+                                    <p className="font-bold text-xs truncate max-w-[180px]">
+                                      {att.name}
+                                    </p>
+                                    <p className="text-[10px] opacity-80">
+                                      {formatFileSize(att.size)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => triggerDownload(att)}
+                                  className={`p-2 rounded-xl transition cursor-pointer shrink-0 ${
+                                    isMe
+                                      ? 'bg-white/30 hover:bg-white/40 text-white'
+                                      : 'bg-rose-500 hover:bg-rose-600 text-white shadow-xs'
+                                  }`}
+                                  title="Download File"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Text Message */}
+                    {msg.text && <p className="break-words font-medium">{msg.text}</p>}
+
+                    {/* Timestamp & Reaction */}
                     <div
                       className={`flex items-center justify-between gap-3 text-[10px] mt-1 pt-1 ${
                         isMe ? 'text-rose-100/90' : 'text-slate-400'
@@ -389,7 +649,7 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
                       <button
                         type="button"
                         onClick={() => handleAddReaction(msg.id, '❤️')}
-                        className="hover:scale-125 transition-transform"
+                        className="hover:scale-125 transition-transform cursor-pointer"
                       >
                         {msg.reaction || '🤍'}
                       </button>
@@ -409,15 +669,71 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
         <div ref={messagesEndRef} />
       </div>
 
+      {/* STAGED ATTACHMENTS PREVIEW TRAY */}
+      {stagedAttachments.length > 0 && (
+        <div className="p-2 mb-2 bg-rose-50/90 border border-rose-200 rounded-2xl flex items-center gap-2 overflow-x-auto animate-fade-in shrink-0">
+          <span className="text-[10px] font-extrabold uppercase text-rose-600 px-1 shrink-0">
+            Attached ({stagedAttachments.length}):
+          </span>
+
+          {stagedAttachments.map((att) => (
+            <div
+              key={att.id}
+              className="relative group bg-white border border-rose-200 rounded-xl p-1.5 flex items-center gap-2 text-xs shadow-xs shrink-0 max-w-[200px]"
+            >
+              {att.type === 'image' ? (
+                <img
+                  src={att.thumbnail || att.url}
+                  alt={att.name}
+                  className="w-8 h-8 rounded-lg object-cover shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-lg bg-pink-100 text-pink-600 flex items-center justify-center shrink-0">
+                  {att.type === 'video' ? (
+                    <Film className="w-4 h-4" />
+                  ) : att.type === 'audio' ? (
+                    <Music className="w-4 h-4" />
+                  ) : (
+                    <FileText className="w-4 h-4" />
+                  )}
+                </div>
+              )}
+
+              <div className="truncate text-left pr-4">
+                <p className="truncate font-semibold text-[11px] text-slate-800">{att.name}</p>
+                <p className="text-[9px] text-slate-400">{formatFileSize(att.size)}</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleRemoveStagedAttachment(att.id)}
+                className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 hover:bg-rose-600 text-white rounded-full flex items-center justify-center shadow-xs cursor-pointer"
+                title="Remove"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* UPLOADING / PROCESSING INDICATOR */}
+      {isProcessingFile && (
+        <div className="flex items-center gap-2 p-2 mb-2 bg-purple-50/90 border border-purple-200 rounded-2xl text-xs text-purple-700 animate-pulse shrink-0">
+          <Loader2 className="w-4 h-4 animate-spin text-purple-600 shrink-0" />
+          <span className="font-medium truncate">{uploadProgressText || 'Processing attachment...'}</span>
+        </div>
+      )}
+
       {/* Love Emoji Bar */}
       {showEmojis && (
-        <div className="p-2 mb-2 bg-rose-50/90 border border-rose-200 rounded-2xl flex flex-wrap gap-1.5 animate-fade-in">
+        <div className="p-2 mb-2 bg-rose-50/90 border border-rose-200 rounded-2xl flex flex-wrap gap-1.5 animate-fade-in shrink-0">
           {LOVE_EMOJIS.map((emoji) => (
             <button
               key={emoji}
               type="button"
               onClick={() => handleAddEmoji(emoji)}
-              className="text-lg hover:scale-125 transition-transform p-1"
+              className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
             >
               {emoji}
             </button>
@@ -433,29 +749,107 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
         }}
         className="flex items-center gap-2 pt-2 border-t border-rose-100 shrink-0"
       >
+        {/* Hidden Attachment Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={(e) => {
+            if (e.target.files) handleFilesSelected(e.target.files);
+            e.target.value = ''; // reset so same file can be chosen again
+          }}
+          multiple
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip"
+          className="hidden"
+        />
+
+        {/* Attachment Button */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach photos, videos, voice recordings, or files"
+          className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition cursor-pointer"
+        >
+          <Paperclip className="w-5 h-5" />
+        </button>
+
+        {/* Emoji Button */}
         <button
           type="button"
           onClick={() => setShowEmojis(!showEmojis)}
-          className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition"
+          className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition cursor-pointer"
         >
           <Smile className="w-5 h-5" />
         </button>
 
+        {/* Text Input */}
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Type a sweet message to ${partnerName}...`}
+          placeholder={
+            stagedAttachments.length > 0
+              ? `Add a caption for your ${stagedAttachments.length} attachment(s)...`
+              : `Type a sweet message to ${partnerName}...`
+          }
           className="flex-1 px-4 py-2.5 rounded-xl border border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-400 text-xs sm:text-sm bg-white font-medium text-slate-800"
         />
 
+        {/* Send Button */}
         <button
           type="submit"
-          className="p-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white shadow-md shadow-rose-400/25 transition active:scale-95"
+          disabled={!inputText.trim() && stagedAttachments.length === 0}
+          className="p-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white shadow-md shadow-rose-400/25 transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           <Send className="w-4 h-4" />
         </button>
       </form>
+
+      {/* FULLSCREEN LIGHTBOX MODAL */}
+      {lightboxAttachment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center justify-center">
+            {/* Top Bar with Controls */}
+            <div className="absolute -top-10 left-0 right-0 flex items-center justify-between text-white text-xs px-2">
+              <span className="font-semibold truncate max-w-xs">{lightboxAttachment.name}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => triggerDownload(lightboxAttachment)}
+                  className="flex items-center gap-1 px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white font-semibold transition cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLightboxAttachment(null)}
+                  className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Media Body */}
+            {lightboxAttachment.type === 'image' && (
+              <img
+                src={lightboxAttachment.url}
+                alt={lightboxAttachment.name}
+                className="max-h-[80vh] max-w-full rounded-2xl object-contain shadow-2xl"
+              />
+            )}
+            {lightboxAttachment.type === 'video' && (
+              <video
+                src={lightboxAttachment.url}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[80vh] max-w-full rounded-2xl shadow-2xl bg-black"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Secret Room Key Configuration Modal */}
       {showRoomModal && (
@@ -478,39 +872,35 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    required
                     value={tempRoomKey}
                     onChange={(e) => setTempRoomKey(e.target.value)}
                     placeholder="e.g. vishvesh-laura-love-nest-2026"
-                    className="flex-1 px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    className="flex-1 px-4 py-2 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-rose-500 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={copyRoomKey}
-                    className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition text-xs font-semibold flex items-center gap-1"
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
                   >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
+                    {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    <span>{copied ? 'Copied' : 'Copy'}</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Default is already pre-configured for Vishvesh &amp; Laura.
-                </p>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowRoomModal(false)}
-                  className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
-                  Close
+                  Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white text-xs font-bold shadow-md shadow-rose-400/30"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:opacity-95 text-white font-bold text-xs shadow-md shadow-rose-400/25 transition active:scale-95 cursor-pointer"
                 >
-                  Save &amp; Connect 🌐
+                  Connect & Save
                 </button>
               </div>
             </form>

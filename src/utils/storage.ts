@@ -500,11 +500,36 @@ export function saveChatMessages(messages: ChatMessage[]): void {
   try {
     // Sanitize before saving so localStorage quota is never exceeded
     const clean = messages.map((m) => {
-      if (m.senderPhoto && m.senderPhoto.length > 500) {
-        const { senderPhoto, ...rest } = m;
-        return rest;
+      let msg: ChatMessage = { ...m };
+      if (msg.senderPhoto && msg.senderPhoto.length > 500) {
+        const { senderPhoto, ...rest } = msg;
+        msg = rest as ChatMessage;
       }
-      return m;
+      // Protect localStorage from huge raw base64 attachments
+      if (msg.attachment && msg.attachment.url && msg.attachment.url.startsWith('data:') && msg.attachment.url.length > 120000) {
+        msg = {
+          ...msg,
+          attachment: {
+            ...msg.attachment,
+            url: msg.attachment.thumbnail || '',
+          },
+        };
+      }
+      if (Array.isArray(msg.attachments)) {
+        msg = {
+          ...msg,
+          attachments: msg.attachments.map((att) => {
+            if (att.url && att.url.startsWith('data:') && att.url.length > 120000) {
+              return {
+                ...att,
+                url: att.thumbnail || '',
+              };
+            }
+            return att;
+          }),
+        };
+      }
+      return msg;
     });
     localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(clean));
   } catch (e) {

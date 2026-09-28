@@ -76,6 +76,18 @@ export interface FlamesResult {
   advice: string;
 }
 
+export type ChatAttachmentType = 'image' | 'video' | 'audio' | 'file';
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  type: ChatAttachmentType;
+  mimeType: string;
+  url: string;
+  size?: number;
+  thumbnail?: string;
+}
+
 export interface ChatMessage {
   id: string;
   senderClientId?: string;
@@ -85,6 +97,8 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
   reaction?: string;
+  attachment?: ChatAttachment;
+  attachments?: ChatAttachment[];
 }
 
 export interface DreamItem {
