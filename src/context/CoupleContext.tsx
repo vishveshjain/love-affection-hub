@@ -515,6 +515,16 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
           }
         }
+      } else if (payload.type === 'VIDEO_CALL_SIGNAL') {
+        const sig = payload.data;
+        if (sig && sig.signalType === 'theme-sync') {
+          if (sig.themeId) {
+            try { localStorage.setItem('love_app_video_theme', sig.themeId); } catch {}
+          }
+          if (sig.filterId) {
+            try { localStorage.setItem('love_app_video_filter', sig.filterId); } catch {}
+          }
+        }
       }
     });
 
@@ -543,6 +553,8 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const bfPhotoVault = localStorage.getItem(PERMANENT_KEYS.BF_PHOTO_VAULT);
     const gfPhotoVault = localStorage.getItem(PERMANENT_KEYS.GF_PHOTO_VAULT);
     const roomKey = localStorage.getItem('love_app_realtime_room_key_v1');
+    const videoTheme = localStorage.getItem('love_app_video_theme');
+    const videoFilter = localStorage.getItem('love_app_video_filter');
 
     // Clear transient stats, coupons, animations, etc.
     localStorage.clear();
@@ -576,6 +588,12 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
     if (roomKey) {
       localStorage.setItem('love_app_realtime_room_key_v1', roomKey);
+    }
+    if (videoTheme) {
+      localStorage.setItem('love_app_video_theme', videoTheme);
+    }
+    if (videoFilter) {
+      localStorage.setItem('love_app_video_filter', videoFilter);
     }
 
     soundFx.playPop(520, 0.08);

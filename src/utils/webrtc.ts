@@ -6,66 +6,88 @@ import { realtimeHub, RealtimePayload, getClientId, getRoomKey } from './realtim
 import { romanticMusic } from './romanticMusic';
 
 export type RomanticThemeId = 'moonlight' | 'sunset' | 'candlelight' | 'sakura' | 'aurora';
-export type RomanticFilterId = 'dreamy' | 'golden' | 'rose' | 'vintage' | 'fairy' | 'natural';
+export type RomanticFilterId = 'dreamy' | 'golden' | 'rose' | 'candlelight' | 'vintage' | 'fairy' | 'natural';
 export type UserRole = 'boyfriend' | 'girlfriend';
 
 export interface RomanticThemeConfig {
   id: RomanticThemeId;
   name: string;
+  subtitle: string;
   icon: string;
   description: string;
   gradient: string;
-  particleEmoji: string;
+  accentBorder: string;
+  glowColor: string;
+  particleEmojis: string[];
 }
 
 export interface RomanticFilterConfig {
   id: RomanticFilterId;
   name: string;
+  subtitle: string;
   icon: string;
+  description: string;
   cssFilter: string;
   overlayClass: string;
+  frameGlow: string;
+  badgeBg: string;
 }
 
 export const ROMANTIC_THEMES: RomanticThemeConfig[] = [
   {
     id: 'moonlight',
     name: 'Moonlight Sanctuary',
+    subtitle: 'Starlit Celestial Sky',
     icon: '🌙',
-    description: 'Deep midnight blue with stardust shimmer and soft moonlight ripples',
-    gradient: 'from-slate-950 via-indigo-950 to-purple-950',
-    particleEmoji: '✨',
+    description: 'Midnight celestial sky with glowing moon, stardust trails, and twinkling stars',
+    gradient: 'from-[#030712] via-[#0b132b] to-[#1c2541]',
+    accentBorder: 'border-cyan-400/50',
+    glowColor: 'rgba(56, 189, 248, 0.45)',
+    particleEmojis: ['✨', '⭐', '🌙', '💫', '🌟'],
   },
   {
     id: 'sunset',
     name: 'Sunset Beach Romance',
+    subtitle: 'Golden Hour Horizon',
     icon: '🌅',
-    description: 'Pastel pink, coral orange, and golden waves of eternal love',
-    gradient: 'from-rose-950 via-pink-900 to-amber-950',
-    particleEmoji: '💖',
+    description: 'Vibrant twilight horizon with blazing coral sun, warm golden waves, and floating hearts',
+    gradient: 'from-[#2d0036] via-[#7b113a] via-[#c02739] to-[#ff7582]',
+    accentBorder: 'border-amber-400/50',
+    glowColor: 'rgba(251, 146, 60, 0.45)',
+    particleEmojis: ['💖', '🧡', '✨', '🌅', '🥂'],
   },
   {
     id: 'candlelight',
     name: 'Candlelit Haven',
+    subtitle: 'Intimate Velvet & Amber',
     icon: '🕯️',
-    description: 'Flickering warm candle glow, red velvet roses, and intimate shadows',
-    gradient: 'from-neutral-950 via-rose-950 to-stone-900',
-    particleEmoji: '🌹',
+    description: 'Cozy intimate darkness with dancing golden candle flames, falling rose petals, and warm embers',
+    gradient: 'from-[#120406] via-[#240a0e] to-[#3a0f15]',
+    accentBorder: 'border-rose-500/50',
+    glowColor: 'rgba(244, 63, 94, 0.45)',
+    particleEmojis: ['🌹', '🕯️', '🥀', '✨', '🔥'],
   },
   {
     id: 'sakura',
     name: 'Cherry Blossom Dream',
+    subtitle: 'Dancing Spring Petals',
     icon: '🌸',
-    description: 'Drifting pink sakura blossoms dancing in a gentle romantic breeze',
-    gradient: 'from-pink-950 via-fuchsia-950 to-slate-900',
-    particleEmoji: '🌸',
+    description: 'Dreamy plum-pink Kyoto dusk with fluttering pink sakura blossoms drifting in a warm breeze',
+    gradient: 'from-[#1a0a21] via-[#3d133f] to-[#6d1b58]',
+    accentBorder: 'border-pink-400/50',
+    glowColor: 'rgba(244, 114, 182, 0.5)',
+    particleEmojis: ['🌸', '💮', '🍃', '🌸', '✨'],
   },
   {
     id: 'aurora',
     name: 'Love Aurora & Hearts',
+    subtitle: 'Northern Lights Romance',
     icon: '💫',
-    description: 'Shimmering Northern lights infused with floating neon love hearts',
-    gradient: 'from-purple-950 via-violet-900 to-emerald-950',
-    particleEmoji: '💜',
+    description: 'Enchanting Northern lights undulating in electric emerald, violet, and cyan with floating neon hearts',
+    gradient: 'from-[#0b0c1e] via-[#1a103c] to-[#0d282e]',
+    accentBorder: 'border-purple-400/50',
+    glowColor: 'rgba(168, 85, 247, 0.5)',
+    particleEmojis: ['💜', '💖', '✨', '💫', '💚'],
   },
 ];
 
@@ -73,44 +95,79 @@ export const ROMANTIC_FILTERS: RomanticFilterConfig[] = [
   {
     id: 'dreamy',
     name: 'Dreamy Glow',
+    subtitle: 'Soft romantic movie bloom',
     icon: '✨',
-    cssFilter: 'contrast(105%) brightness(108%) saturate(115%) blur(0.2px)',
-    overlayClass: 'bg-rose-500/10 mix-blend-screen',
+    description: 'Heavenly soft halo, tender rose-peach glow, and luminous skin smoothing',
+    cssFilter: 'contrast(106%) brightness(108%) saturate(125%)',
+    overlayClass: 'bg-gradient-to-t from-rose-500/20 via-pink-400/10 to-transparent mix-blend-screen',
+    frameGlow: 'rgba(244, 63, 94, 0.45)',
+    badgeBg: 'bg-rose-500/80 text-white',
   },
   {
     id: 'golden',
     name: 'Golden Hour',
+    subtitle: 'Warm sun-kissed honey radiance',
     icon: '🌅',
-    cssFilter: 'sepia(25%) saturate(135%) brightness(106%) contrast(104%)',
-    overlayClass: 'bg-amber-500/15 mix-blend-color-dodge',
+    description: 'Rich amber warmth, golden rim lighting, and radiant sun-kissed skin tone',
+    cssFilter: 'sepia(24%) saturate(142%) brightness(108%) contrast(106%) hue-rotate(-6deg)',
+    overlayClass: 'bg-gradient-to-tr from-amber-600/20 via-yellow-400/12 to-transparent mix-blend-color-dodge',
+    frameGlow: 'rgba(245, 158, 11, 0.5)',
+    badgeBg: 'bg-amber-500/80 text-white',
   },
   {
     id: 'rose',
     name: 'Rose Quartz',
+    subtitle: 'Blushing petal tenderness',
     icon: '🌸',
-    cssFilter: 'hue-rotate(-10deg) saturate(120%) brightness(105%) contrast(103%)',
-    overlayClass: 'bg-pink-500/15 mix-blend-soft-light',
+    description: 'Lush pastel pink blush, delicate romantic tint, and porcelain clarity',
+    cssFilter: 'saturate(130%) brightness(106%) contrast(104%) hue-rotate(-14deg)',
+    overlayClass: 'bg-gradient-to-b from-pink-400/20 via-rose-300/10 to-rose-500/15 mix-blend-soft-light',
+    frameGlow: 'rgba(244, 114, 182, 0.5)',
+    badgeBg: 'bg-pink-500/80 text-white',
+  },
+  {
+    id: 'candlelight',
+    name: 'Candlelight Warmth',
+    subtitle: 'Intimate amber firelight',
+    icon: '🕯️',
+    description: 'Warm flickering golden flame shadows, rich contrast, and cozy romantic intimacy',
+    cssFilter: 'sepia(32%) contrast(114%) brightness(104%) saturate(132%)',
+    overlayClass: 'bg-gradient-to-t from-amber-900/30 via-transparent to-amber-700/15 mix-blend-overlay',
+    frameGlow: 'rgba(251, 146, 60, 0.5)',
+    badgeBg: 'bg-amber-600/80 text-white',
   },
   {
     id: 'vintage',
     name: '90s Love Letter',
+    subtitle: 'Nostalgic cinema film',
     icon: '📜',
-    cssFilter: 'sepia(35%) contrast(110%) brightness(96%) saturate(90%)',
-    overlayClass: 'bg-amber-900/10 mix-blend-multiply',
+    description: 'Retro 90s movie warmth, gentle sepia tones, and romantic cinematic depth',
+    cssFilter: 'sepia(38%) contrast(116%) brightness(97%) saturate(96%)',
+    overlayClass: 'bg-gradient-to-b from-amber-950/25 via-transparent to-stone-950/35 mix-blend-multiply',
+    frameGlow: 'rgba(180, 83, 9, 0.4)',
+    badgeBg: 'bg-amber-800/80 text-white',
   },
   {
     id: 'fairy',
     name: 'Fairy Sparkle',
+    subtitle: 'Magical iridescent fairy dust',
     icon: '🧚',
-    cssFilter: 'brightness(112%) contrast(108%) saturate(125%)',
-    overlayClass: 'bg-gradient-to-tr from-purple-500/15 via-pink-400/10 to-amber-300/15 mix-blend-screen',
+    description: 'Fairytale fantasy shimmer, pastel violet-magenta radiance, and twinkle',
+    cssFilter: 'brightness(112%) contrast(108%) saturate(132%) hue-rotate(12deg)',
+    overlayClass: 'bg-gradient-to-tr from-purple-500/20 via-pink-400/12 to-cyan-300/15 mix-blend-screen',
+    frameGlow: 'rgba(192, 132, 252, 0.5)',
+    badgeBg: 'bg-purple-500/80 text-white',
   },
   {
     id: 'natural',
     name: 'Crystal Natural',
+    subtitle: 'Pure crisp HD radiance',
     icon: '🪞',
-    cssFilter: 'none',
+    description: 'Natural balanced lighting, true-to-life colors, and pristine video clarity',
+    cssFilter: 'contrast(102%) brightness(102%) saturate(106%)',
     overlayClass: 'opacity-0',
+    frameGlow: 'rgba(255, 255, 255, 0.25)',
+    badgeBg: 'bg-slate-700/80 text-white',
   },
 ];
 
@@ -165,6 +222,29 @@ type CallStateListener = (state: {
 
 type ReactionListener = (reaction: { id: string; emoji: string; x: number; y: number; senderRole?: UserRole }) => void;
 
+export type ThemeSyncListener = (info: {
+  themeId?: RomanticThemeId;
+  filterId?: RomanticFilterId;
+  senderName?: string;
+  senderRole?: UserRole;
+}) => void;
+
+function getInitialTheme(): RomanticThemeId {
+  try {
+    const saved = localStorage.getItem('love_app_video_theme') as RomanticThemeId;
+    if (saved && ROMANTIC_THEMES.some((t) => t.id === saved)) return saved;
+  } catch {}
+  return 'moonlight';
+}
+
+function getInitialFilter(): RomanticFilterId {
+  try {
+    const saved = localStorage.getItem('love_app_video_filter') as RomanticFilterId;
+    if (saved && ROMANTIC_FILTERS.some((f) => f.id === saved)) return saved;
+  } catch {}
+  return 'dreamy';
+}
+
 class RomanticVideoCallService {
   private peer: any = null;
   private activeCall: any = null;
@@ -184,12 +264,13 @@ class RomanticVideoCallService {
   public callerName?: string;
   public isMuted: boolean = false;
   public isVideoOff: boolean = false;
-  public activeTheme: RomanticThemeId = 'moonlight';
-  public activeFilter: RomanticFilterId = 'dreamy';
+  public activeTheme: RomanticThemeId = getInitialTheme();
+  public activeFilter: RomanticFilterId = getInitialFilter();
   public partnerTouchingHeart: boolean = false;
 
   private stateListeners: Set<CallStateListener> = new Set();
   private reactionListeners: Set<ReactionListener> = new Set();
+  private themeSyncListeners: Set<ThemeSyncListener> = new Set();
 
   constructor() {
     this.setupSignalingListener();
@@ -235,6 +316,15 @@ class RomanticVideoCallService {
   public onReaction(listener: ReactionListener): () => void {
     this.reactionListeners.add(listener);
     return () => this.reactionListeners.delete(listener);
+  }
+
+  public onThemeSync(listener: ThemeSyncListener): () => void {
+    this.themeSyncListeners.add(listener);
+    return () => this.themeSyncListeners.delete(listener);
+  }
+
+  public setMyRole(role: UserRole) {
+    this.myRole = role;
   }
 
   // Ensure PeerJS connection is active with unique client identifier
@@ -619,7 +709,61 @@ class RomanticVideoCallService {
       return;
     }
 
-    // Mismatched session check for active calls
+    // 3. Romantic Theme & Atmosphere Synchronizer (Always applies for both partners!)
+    if (data.signalType === 'theme-sync') {
+      let changed = false;
+      if (data.themeId && data.themeId !== this.activeTheme) {
+        this.activeTheme = data.themeId;
+        try {
+          localStorage.setItem('love_app_video_theme', data.themeId);
+        } catch {}
+        changed = true;
+      }
+      if (data.filterId && data.filterId !== this.activeFilter) {
+        this.activeFilter = data.filterId;
+        try {
+          localStorage.setItem('love_app_video_filter', data.filterId);
+        } catch {}
+        changed = true;
+      }
+      if (changed) {
+        this.notify();
+        this.themeSyncListeners.forEach((l) =>
+          l({
+            themeId: data.themeId,
+            filterId: data.filterId,
+            senderName: senderName || 'Your Love',
+            senderRole,
+          })
+        );
+      }
+      return;
+    }
+
+    // 4. Romantic reactions (flying kisses, hearts)
+    if (data.signalType === 'romantic-reaction') {
+      if (data.emoji && typeof data.x === 'number' && typeof data.y === 'number') {
+        this.reactionListeners.forEach((l) =>
+          l({
+            id: data.reactionId || `r_${Date.now()}`,
+            emoji: data.emoji!,
+            x: data.x!,
+            y: data.y!,
+            senderRole,
+          })
+        );
+      }
+      return;
+    }
+
+    // 5. Soul touch heart
+    if (data.signalType === 'touch-heart') {
+      this.partnerTouchingHeart = Boolean(data.touchActive);
+      this.notify();
+      return;
+    }
+
+    // Mismatched session check for active calls (call-accept / call-decline)
     if (this.currentCallId && data.callId && data.callId !== this.currentCallId) {
       return;
     }
@@ -650,31 +794,6 @@ class RomanticVideoCallService {
           alert(`${senderName || 'Your partner'} is unable to answer right now.`);
         }
         break;
-
-      case 'romantic-reaction':
-        if (data.emoji && typeof data.x === 'number' && typeof data.y === 'number') {
-          this.reactionListeners.forEach((l) =>
-            l({
-              id: data.reactionId || `r_${Date.now()}`,
-              emoji: data.emoji!,
-              x: data.x!,
-              y: data.y!,
-              senderRole,
-            })
-          );
-        }
-        break;
-
-      case 'touch-heart':
-        this.partnerTouchingHeart = Boolean(data.touchActive);
-        this.notify();
-        break;
-
-      case 'theme-sync':
-        if (data.themeId) this.activeTheme = data.themeId;
-        if (data.filterId) this.activeFilter = data.filterId;
-        this.notify();
-        break;
     }
   }
 
@@ -700,21 +819,35 @@ class RomanticVideoCallService {
     return this.isVideoOff;
   }
 
-  // Switch Theme (with sync to partner)
-  public setTheme(theme: RomanticThemeId, syncToPartner: boolean = true) {
+  // Switch Theme (with instant bidirectional sync to partner)
+  public setTheme(theme: RomanticThemeId, syncToPartner: boolean = true, myRole?: UserRole, myName?: string) {
     this.activeTheme = theme;
+    try {
+      localStorage.setItem('love_app_video_theme', theme);
+    } catch {}
     this.notify();
     if (syncToPartner) {
-      this.sendSignal({ signalType: 'theme-sync', themeId: theme });
+      this.sendSignal({
+        signalType: 'theme-sync',
+        themeId: theme,
+        filterId: this.activeFilter,
+      }, myRole || this.myRole, myName);
     }
   }
 
-  // Switch Filter
-  public setFilter(filter: RomanticFilterId, syncToPartner: boolean = false) {
+  // Switch Filter (with instant bidirectional sync to partner)
+  public setFilter(filter: RomanticFilterId, syncToPartner: boolean = true, myRole?: UserRole, myName?: string) {
     this.activeFilter = filter;
+    try {
+      localStorage.setItem('love_app_video_filter', filter);
+    } catch {}
     this.notify();
     if (syncToPartner) {
-      this.sendSignal({ signalType: 'theme-sync', filterId: filter });
+      this.sendSignal({
+        signalType: 'theme-sync',
+        themeId: this.activeTheme,
+        filterId: filter,
+      }, myRole || this.myRole, myName);
     }
   }
 

@@ -8,6 +8,7 @@ import {
   RomanticFilterId,
 } from '../../utils/webrtc';
 import { romanticMusic } from '../../utils/romanticMusic';
+import { soundFx } from '../../utils/audio';
 import confetti from 'canvas-confetti';
 import {
   Video,
@@ -22,12 +23,9 @@ import {
   Wand2,
   Volume2,
   VolumeX,
-  Maximize2,
-  Minimize2,
   Columns,
-  Flame,
-  Music,
   ChevronLeft,
+  Check,
 } from 'lucide-react';
 
 const ROMANTIC_EMOJIS = [
@@ -47,6 +45,263 @@ interface RomanticVideoChatProps {
   onClose?: () => void;
 }
 
+// ================= ATMOSPHERIC BACKGROUND COMPONENT =================
+const AtmosphericBackground: React.FC<{ themeId: RomanticThemeId }> = ({ themeId }) => {
+  switch (themeId) {
+    case 'moonlight':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          {/* Luminous Crescent Moon with Silver Corona */}
+          <div className="absolute top-6 right-8 md:top-10 md:right-16 w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-tr from-slate-100 via-sky-100 to-indigo-200 shadow-[0_0_60px_rgba(186,230,253,0.45)] flex items-center justify-center opacity-90">
+            <div className="w-5 h-5 rounded-full bg-slate-300/40 absolute top-4 left-6" />
+            <div className="w-8 h-8 rounded-full bg-slate-300/30 absolute bottom-5 right-7" />
+            <div className="w-3 h-3 rounded-full bg-slate-300/30 absolute top-12 left-12" />
+          </div>
+
+          {/* Moonlight beam diagonal sweep */}
+          <div className="absolute -top-1/4 right-0 w-[600px] h-[600px] bg-gradient-to-bl from-sky-300/10 via-indigo-400/5 to-transparent blur-3xl transform rotate-12 pointer-events-none" />
+
+          {/* Twinkling celestial stars */}
+          {[
+            { top: '12%', left: '8%', size: 3, delay: '0.2s' },
+            { top: '22%', left: '18%', size: 4, delay: '1.2s' },
+            { top: '8%', left: '32%', size: 2, delay: '0.7s' },
+            { top: '35%', left: '12%', size: 3, delay: '1.8s' },
+            { top: '15%', left: '55%', size: 4, delay: '0.4s' },
+            { top: '28%', left: '72%', size: 2, delay: '2.1s' },
+            { top: '18%', left: '85%', size: 3, delay: '1.5s' },
+            { top: '48%', left: '6%', size: 2, delay: '0.9s' },
+            { top: '65%', left: '15%', size: 4, delay: '1.7s' },
+            { top: '78%', left: '28%', size: 3, delay: '0.3s' },
+            { top: '55%', left: '88%', size: 3, delay: '2.4s' },
+            { top: '72%', left: '80%', size: 4, delay: '1.1s' },
+            { top: '85%', left: '92%', size: 2, delay: '0.6s' },
+            { top: '42%', left: '95%', size: 3, delay: '1.9s' },
+          ].map((st, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full bg-white animate-pulse"
+              style={{
+                top: st.top,
+                left: st.left,
+                width: `${st.size}px`,
+                height: `${st.size}px`,
+                animationDelay: st.delay,
+                boxShadow: '0 0 8px rgba(255,255,255,0.9)',
+              }}
+            />
+          ))}
+
+          {/* Floating stardust specks */}
+          {['✨', '⭐', '✨', '🌟', '🌙'].map((emoji, i) => (
+            <div
+              key={i}
+              className="absolute text-lg text-sky-200/60 select-none animate-float-slow"
+              style={{
+                left: `${15 + i * 18}%`,
+                bottom: `${10 + (i % 3) * 15}%`,
+                animationDuration: `${6 + i * 2}s`,
+                animationDelay: `${i * 1.3}s`,
+              }}
+            >
+              {emoji}
+            </div>
+          ))}
+        </div>
+      );
+
+    case 'sunset':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          {/* Setting glowing sun orb at horizon */}
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-48 h-48 md:w-64 md:h-64 rounded-full bg-gradient-to-t from-amber-400 via-rose-500 to-transparent blur-xl opacity-70 animate-pulse" />
+          <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-32 h-32 md:w-44 md:h-44 rounded-full bg-gradient-to-t from-yellow-300 via-amber-400 to-rose-400 shadow-[0_0_80px_rgba(251,191,36,0.8)] opacity-90" />
+
+          {/* Ocean sunset shimmer band */}
+          <div className="absolute bottom-0 inset-x-0 h-28 bg-gradient-to-t from-amber-500/25 via-rose-500/20 to-transparent blur-md" />
+          <div className="absolute bottom-2 inset-x-0 h-1 bg-gradient-to-r from-transparent via-amber-300/60 to-transparent shadow-[0_0_20px_#fde047]" />
+
+          {/* Floating warm sunset hearts & golden embers */}
+          {['💖', '🧡', '✨', '🌅', '🥂', '💖'].map((emoji, i) => (
+            <div
+              key={i}
+              className="absolute text-xl select-none animate-float-slow opacity-80"
+              style={{
+                left: `${10 + i * 16}%`,
+                bottom: `${5 + (i % 4) * 12}%`,
+                animationDuration: `${5 + i * 1.5}s`,
+                animationDelay: `${i * 0.9}s`,
+              }}
+            >
+              {emoji}
+            </div>
+          ))}
+        </div>
+      );
+
+    case 'candlelight':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          {/* Bottom candlelight warm flickering glows */}
+          <div className="absolute bottom-4 left-8 w-44 h-44 rounded-full bg-gradient-to-tr from-amber-500/35 via-orange-600/20 to-transparent blur-2xl animate-candle-flicker-1" />
+          <div className="absolute bottom-4 right-8 w-44 h-44 rounded-full bg-gradient-to-tl from-amber-500/35 via-rose-600/20 to-transparent blur-2xl animate-candle-flicker-2" />
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-72 h-72 rounded-full bg-rose-950/40 blur-3xl" />
+
+          {/* Drifting red rose petals */}
+          {[
+            { left: '12%', delay: '0s', dur: '7s', rot: '45deg', size: 'text-2xl' },
+            { left: '28%', delay: '2.5s', dur: '8s', rot: '-30deg', size: 'text-xl' },
+            { left: '46%', delay: '1s', dur: '6.5s', rot: '60deg', size: 'text-2xl' },
+            { left: '68%', delay: '3.2s', dur: '7.5s', rot: '-45deg', size: 'text-xl' },
+            { left: '84%', delay: '1.8s', dur: '8.5s', rot: '25deg', size: 'text-2xl' },
+          ].map((petal, i) => (
+            <div
+              key={i}
+              className={`absolute ${petal.size} select-none animate-petal-fall`}
+              style={{
+                left: petal.left,
+                top: '-20px',
+                animationDelay: petal.delay,
+                animationDuration: petal.dur,
+                transform: `rotate(${petal.rot})`,
+              }}
+            >
+              {i % 2 === 0 ? '🌹' : '🥀'}
+            </div>
+          ))}
+
+          {/* Floating warm embers */}
+          {['✨', '🔥', '✨', '🕯️', '✨'].map((emoji, i) => (
+            <div
+              key={i}
+              className="absolute text-base text-amber-200 select-none animate-float-slow opacity-75"
+              style={{
+                left: `${18 + i * 16}%`,
+                bottom: `${15 + (i % 3) * 20}%`,
+                animationDuration: `${4.5 + i}s`,
+                animationDelay: `${i * 1.1}s`,
+              }}
+            >
+              {emoji}
+            </div>
+          ))}
+        </div>
+      );
+
+    case 'sakura':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          {/* Soft pastel sakura petal mist */}
+          <div className="absolute top-1/4 left-1/4 w-80 h-80 rounded-full bg-pink-500/20 blur-3xl animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-fuchsia-500/15 blur-3xl animate-pulse" />
+
+          {/* Dancing Pink Sakura Blossoms drifting down */}
+          {[
+            { left: '8%', delay: '0.2s', dur: '6s', size: 'text-2xl' },
+            { left: '18%', delay: '2.1s', dur: '7.5s', size: 'text-xl' },
+            { left: '32%', delay: '1.1s', dur: '6.8s', size: 'text-2xl' },
+            { left: '48%', delay: '3.4s', dur: '8s', size: 'text-lg' },
+            { left: '62%', delay: '0.8s', dur: '7s', size: 'text-2xl' },
+            { left: '76%', delay: '2.7s', dur: '6.2s', size: 'text-xl' },
+            { left: '88%', delay: '1.5s', dur: '7.8s', size: 'text-2xl' },
+            { left: '95%', delay: '4.0s', dur: '6.5s', size: 'text-lg' },
+          ].map((sakura, i) => (
+            <div
+              key={i}
+              className={`absolute ${sakura.size} select-none animate-sakura-fall`}
+              style={{
+                left: sakura.left,
+                top: '-30px',
+                animationDelay: sakura.delay,
+                animationDuration: sakura.dur,
+              }}
+            >
+              {i % 3 === 0 ? '🌸' : i % 3 === 1 ? '💮' : '🌸'}
+            </div>
+          ))}
+        </div>
+      );
+
+    case 'aurora':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+          {/* Northern Lights / Aurora Waves */}
+          <div className="absolute top-0 inset-x-0 h-64 bg-gradient-to-b from-emerald-500/25 via-violet-500/20 to-transparent blur-3xl animate-aurora-wave-1" />
+          <div className="absolute top-12 inset-x-0 h-56 bg-gradient-to-b from-purple-500/25 via-cyan-400/20 to-transparent blur-2xl animate-aurora-wave-2" />
+          <div className="absolute top-28 inset-x-0 h-48 bg-gradient-to-b from-fuchsia-500/20 via-teal-400/15 to-transparent blur-2xl animate-aurora-wave-1" />
+
+          {/* Floating neon hearts */}
+          {['💜', '💖', '✨', '💫', '💚', '💜'].map((emoji, i) => (
+            <div
+              key={i}
+              className="absolute text-xl select-none animate-float-slow opacity-85 filter drop-shadow-[0_0_12px_rgba(168,85,247,0.8)]"
+              style={{
+                left: `${12 + i * 15}%`,
+                bottom: `${10 + (i % 3) * 18}%`,
+                animationDuration: `${5.5 + i}s`,
+                animationDelay: `${i * 1.2}s`,
+              }}
+            >
+              {emoji}
+            </div>
+          ))}
+        </div>
+      );
+  }
+};
+
+// ================= FILTER OVERLAY VISUAL EFFECT COMPONENT =================
+const FilterOverlayEffect: React.FC<{ filterId: RomanticFilterId }> = ({ filterId }) => {
+  switch (filterId) {
+    case 'fairy':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+          <div className="absolute top-2 right-3 text-sm animate-pulse">✨</div>
+          <div className="absolute bottom-3 left-4 text-xs animate-ping">⭐</div>
+          <div className="absolute top-1/2 right-2 text-xs animate-pulse">✨</div>
+          <div className="absolute bottom-1/3 left-2 text-sm animate-pulse">🧚</div>
+        </div>
+      );
+    case 'golden':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+          <div className="absolute -top-10 -right-10 w-44 h-44 bg-gradient-to-bl from-amber-300/30 via-yellow-400/10 to-transparent rounded-full blur-xl" />
+          <div className="absolute bottom-2 right-3 text-xs text-amber-200">🌅</div>
+        </div>
+      );
+    case 'rose':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+          <div className="absolute top-2 left-3 text-sm opacity-70">🌸</div>
+          <div className="absolute bottom-2 right-3 text-sm opacity-70">🌹</div>
+        </div>
+      );
+    case 'candlelight':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+          <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-amber-600/30 via-amber-700/10 to-transparent blur-sm" />
+          <div className="absolute bottom-2 left-3 text-xs text-amber-300">🕯️</div>
+        </div>
+      );
+    case 'vintage':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+          <div className="absolute inset-0 border-[10px] border-black/35 pointer-events-none" />
+          <div className="absolute bottom-2 right-3 text-xs text-amber-200/70">📜</div>
+        </div>
+      );
+    case 'dreamy':
+      return (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+          <div className="absolute inset-0 bg-radial from-rose-300/15 via-transparent to-rose-950/20" />
+          <div className="absolute top-2 right-3 text-xs text-pink-300">💖</div>
+        </div>
+      );
+    default:
+      return null;
+  }
+};
+
 export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose }) => {
   const { profile, currentUserName, partnerName, partnerPhoto, partnerRole, partnerOnline } = useCouple();
 
@@ -55,8 +310,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [activeTheme, setActiveTheme] = useState<RomanticThemeId>('moonlight');
-  const [activeFilter, setActiveFilter] = useState<RomanticFilterId>('dreamy');
+  const [activeTheme, setActiveTheme] = useState<RomanticThemeId>(videoCallService.activeTheme);
+  const [activeFilter, setActiveFilter] = useState<RomanticFilterId>(videoCallService.activeFilter);
   const [viewMode, setViewMode] = useState<'pip' | 'split'>('split');
   const [showThemes, setShowThemes] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -67,13 +322,19 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [partnerTouching, setPartnerTouching] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
+  const [syncToast, setSyncToast] = useState<{ message: string; icon: string } | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Subscribe to call state changes
+  // Set user role on mount
+  useEffect(() => {
+    videoCallService.setMyRole(profile.currentUserRole);
+  }, [profile.currentUserRole]);
+
+  // Subscribe to call state changes and bidirectional theme-sync
   useEffect(() => {
     const unsubState = videoCallService.onStateChange((state) => {
       setCallStatus(state.status);
@@ -88,12 +349,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
     const unsubReaction = videoCallService.onReaction((reaction) => {
       setReactions((prev) => [...prev.slice(-20), reaction]);
-      // Auto-cleanup floating emojis after 3.5s
       setTimeout(() => {
         setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
       }, 3500);
 
-      // Trigger celebratory particle burst
       if (reaction.emoji === '💋' || reaction.emoji === '💖' || reaction.emoji === '💍') {
         confetti({
           particleCount: 25,
@@ -104,11 +363,47 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       }
     });
 
+    // Bidirectional theme and filter sync listener from partner
+    const unsubThemeSync = videoCallService.onThemeSync((info) => {
+      if (info.themeId) setActiveTheme(info.themeId);
+      if (info.filterId) setActiveFilter(info.filterId);
+
+      const themeObj = ROMANTIC_THEMES.find((t) => t.id === info.themeId);
+      const filterObj = ROMANTIC_FILTERS.find((f) => f.id === info.filterId);
+      const sender = info.senderName || partnerName || 'Your Love';
+
+      let msg = '';
+      let icon = '✨';
+      if (themeObj && filterObj) {
+        msg = `${sender} set atmosphere to ${themeObj.name} & ${filterObj.name} filter!`;
+        icon = themeObj.icon;
+      } else if (themeObj) {
+        msg = `${sender} changed the atmosphere to ${themeObj.name}!`;
+        icon = themeObj.icon;
+      } else if (filterObj) {
+        msg = `${sender} applied the ${filterObj.name} filter!`;
+        icon = filterObj.icon;
+      }
+
+      if (msg) {
+        setSyncToast({ message: msg, icon });
+        setTimeout(() => setSyncToast(null), 4500);
+        soundFx.playPop(700, 0.08);
+        confetti({
+          particleCount: 20,
+          spread: 50,
+          origin: { y: 0.2 },
+          colors: ['#f43f5e', '#ec4899', '#fbbf24'],
+        });
+      }
+    });
+
     return () => {
       unsubState();
       unsubReaction();
+      unsubThemeSync();
     };
-  }, []);
+  }, [partnerName]);
 
   // Attach local media stream to video tags
   useEffect(() => {
@@ -236,16 +531,36 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setIsVideoOff(nextOff);
   };
 
+  // Select theme with instant bidirectional sync to partner
   const handleSelectTheme = (themeId: RomanticThemeId) => {
     setActiveTheme(themeId);
-    videoCallService.setTheme(themeId, true);
+    videoCallService.setTheme(themeId, true, profile.currentUserRole, currentUserName);
     setShowThemes(false);
+    const themeObj = ROMANTIC_THEMES.find((t) => t.id === themeId);
+    if (themeObj) {
+      setSyncToast({
+        message: `Atmosphere set to ${themeObj.name} for both of you!`,
+        icon: themeObj.icon,
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+      soundFx.playPop(650, 0.08);
+    }
   };
 
+  // Select filter with instant bidirectional sync to partner
   const handleSelectFilter = (filterId: RomanticFilterId) => {
     setActiveFilter(filterId);
-    videoCallService.setFilter(filterId, true);
+    videoCallService.setFilter(filterId, true, profile.currentUserRole, currentUserName);
     setShowFilters(false);
+    const filterObj = ROMANTIC_FILTERS.find((f) => f.id === filterId);
+    if (filterObj) {
+      setSyncToast({
+        message: `Applied ${filterObj.name} filter for both of you!`,
+        icon: filterObj.icon,
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+      soundFx.playPop(650, 0.08);
+    }
   };
 
   const handleSendReaction = (emoji: string) => {
@@ -286,13 +601,90 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const currentFilterConfig = ROMANTIC_FILTERS.find((f) => f.id === activeFilter) || ROMANTIC_FILTERS[0];
 
   return (
-    <div className={`relative w-full rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 bg-gradient-to-br ${currentThemeConfig.gradient} min-h-[580px] md:min-h-[640px] flex flex-col justify-between border-2 border-rose-400/40 select-none`}>
+    <div className={`relative w-full rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 bg-gradient-to-br ${currentThemeConfig.gradient} min-h-[580px] md:min-h-[640px] flex flex-col justify-between border-2 ${currentThemeConfig.accentBorder} select-none`}>
+      {/* CSS Animation Keyframes for Realistic Romantic Atmospheres */}
+      <style>{`
+        @keyframes floatSlow {
+          0% { transform: translateY(0) scale(0.95); opacity: 0; }
+          20% { opacity: 0.85; }
+          80% { opacity: 0.85; }
+          100% { transform: translateY(-280px) scale(1.1); opacity: 0; }
+        }
+        @keyframes petalFall {
+          0% { transform: translateY(0) rotate(0deg) translateX(0); opacity: 0; }
+          10% { opacity: 0.9; }
+          90% { opacity: 0.9; }
+          100% { transform: translateY(520px) rotate(360deg) translateX(80px); opacity: 0; }
+        }
+        @keyframes sakuraFall {
+          0% { transform: translateY(0) rotate(0deg) translateX(0); opacity: 0; }
+          15% { opacity: 0.95; }
+          85% { opacity: 0.95; }
+          100% { transform: translateY(520px) rotate(540deg) translateX(120px); opacity: 0; }
+        }
+        @keyframes candleFlicker1 {
+          0%, 100% { opacity: 0.35; transform: scale(1); }
+          30% { opacity: 0.45; transform: scale(1.08); }
+          60% { opacity: 0.28; transform: scale(0.95); }
+          85% { opacity: 0.42; transform: scale(1.04); }
+        }
+        @keyframes candleFlicker2 {
+          0%, 100% { opacity: 0.32; transform: scale(1); }
+          25% { opacity: 0.42; transform: scale(1.05); }
+          55% { opacity: 0.25; transform: scale(0.92); }
+          80% { opacity: 0.38; transform: scale(1.06); }
+        }
+        @keyframes auroraWave1 {
+          0%, 100% { transform: translateY(0) scaleX(1); opacity: 0.6; }
+          50% { transform: translateY(-18px) scaleX(1.1); opacity: 0.9; }
+        }
+        @keyframes auroraWave2 {
+          0%, 100% { transform: translateY(0) scaleX(1); opacity: 0.5; }
+          50% { transform: translateY(16px) scaleX(1.08); opacity: 0.85; }
+        }
+        .animate-float-slow {
+          animation: floatSlow linear infinite;
+        }
+        .animate-petal-fall {
+          animation: petalFall linear infinite;
+        }
+        .animate-sakura-fall {
+          animation: sakuraFall linear infinite;
+        }
+        .animate-candle-flicker-1 {
+          animation: candleFlicker1 2.8s ease-in-out infinite;
+        }
+        .animate-candle-flicker-2 {
+          animation: candleFlicker2 3.4s ease-in-out infinite;
+        }
+        .animate-aurora-wave-1 {
+          animation: auroraWave1 6s ease-in-out infinite;
+        }
+        .animate-aurora-wave-2 {
+          animation: auroraWave2 8s ease-in-out infinite;
+        }
+      `}</style>
+
       {/* Dedicated Remote Audio Playback Element */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
-      {/* Audio Autoplay Unblock Prompt (if mobile browser blocks initial unmuted audio) */}
-      {audioAutoplayBlocked && (
+      {/* Atmospheric Background Animation Layer */}
+      <AtmosphericBackground themeId={activeTheme} />
+
+      {/* Bidirectional Sync Toast Banner */}
+      {syncToast && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <div className="px-5 py-2.5 rounded-full bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-extrabold text-xs md:text-sm shadow-2xl border-2 border-white/80 flex items-center gap-2.5 ring-4 ring-rose-400/30">
+            <span className="text-xl">{syncToast.icon}</span>
+            <span>{syncToast.message}</span>
+            <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
+          </div>
+        </div>
+      )}
+
+      {/* Audio Autoplay Unblock Prompt */}
+      {audioAutoplayBlocked && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-bounce">
           <button
             type="button"
             onClick={handleEnableAudio}
@@ -303,14 +695,6 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           </button>
         </div>
       )}
-
-      {/* Dynamic Animated Atmospheric Particles */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-1/4 left-1/5 w-72 h-72 rounded-full bg-rose-500/15 blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/5 w-80 h-80 rounded-full bg-purple-500/15 blur-3xl animate-pulse" />
-        {/* Floating atmospheric ambient dots */}
-        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#f43f5e_1px,transparent_1px)] [background-size:24px_24px]" />
-      </div>
 
       {/* ================= TOP HEADER BAR ================= */}
       <div className="relative z-20 flex items-center justify-between p-4 md:px-6 bg-black/40 backdrop-blur-md border-b border-white/10 text-white">
@@ -333,8 +717,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 <span>Romantic Video Sanctuary</span>
                 <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500 animate-pulse" />
               </h2>
-              <p className="text-[11px] text-rose-200/80">
-                {currentThemeConfig.name} • {currentFilterConfig.name}
+              <p className="text-[11px] text-rose-200/90 font-medium">
+                Atmosphere: <strong className="text-white">{currentThemeConfig.name}</strong> • Filter: <strong className="text-amber-200">{currentFilterConfig.name}</strong>
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-bold border border-emerald-400/30">Synced ⚡</span>
               </p>
             </div>
           </div>
@@ -364,21 +749,29 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           {/* Background Theme Selector Toggle */}
           <button
             type="button"
-            onClick={() => setShowThemes((v) => !v)}
-            title="Choose Romantic Background Setting"
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition active:scale-95 border border-white/15"
+            onClick={() => {
+              setShowThemes((v) => !v);
+              setShowFilters(false);
+            }}
+            title="Choose Romantic Atmosphere (Syncs for both)"
+            className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white transition active:scale-95 border border-white/20 flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer"
           >
             <Palette className="w-4 h-4 text-pink-300" />
+            <span className="hidden sm:inline">Atmosphere</span>
           </button>
 
           {/* Video Filter Selector Toggle */}
           <button
             type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            title="Flattering Romantic Video Filter"
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition active:scale-95 border border-white/15"
+            onClick={() => {
+              setShowFilters((v) => !v);
+              setShowThemes(false);
+            }}
+            title="Flattering Video Filter (Syncs for both)"
+            className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white transition active:scale-95 border border-white/20 flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer"
           >
             <Wand2 className="w-4 h-4 text-amber-300" />
+            <span className="hidden sm:inline">Filter</span>
           </button>
 
           {/* Ambient Romantic Harmony Sound Toggle */}
@@ -405,61 +798,84 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
       {/* ================= THEMES MODAL POPOVER ================= */}
       {showThemes && (
-        <div className="absolute top-16 right-4 z-50 w-72 rounded-2xl bg-slate-900/95 p-4 border border-rose-400/40 shadow-2xl backdrop-blur-xl text-white animate-fade-in">
+        <div className="absolute top-16 right-4 z-50 w-80 max-w-[90vw] rounded-2xl bg-slate-900/95 p-4 border border-rose-400/50 shadow-2xl backdrop-blur-xl text-white animate-fade-in max-h-[80vh] overflow-y-auto">
           <div className="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
-              <Palette className="w-3.5 h-3.5" /> Romantic Atmospheres
-            </span>
-            <button onClick={() => setShowThemes(false)} className="text-xs text-slate-400 hover:text-white">✕</button>
+            <div>
+              <span className="text-xs font-extrabold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                <Palette className="w-3.5 h-3.5" /> Romantic Atmospheres
+              </span>
+              <p className="text-[10px] text-slate-400">Syncs instantly for both you & {partnerName}</p>
+            </div>
+            <button onClick={() => setShowThemes(false)} className="text-xs text-slate-400 hover:text-white p-1">✕</button>
           </div>
           <div className="space-y-2">
-            {ROMANTIC_THEMES.map((theme) => (
-              <button
-                key={theme.id}
-                type="button"
-                onClick={() => handleSelectTheme(theme.id)}
-                className={`w-full flex items-center gap-3 p-2 rounded-xl text-left transition ${
-                  activeTheme === theme.id
-                    ? 'bg-rose-500/30 border border-rose-400 ring-1 ring-rose-400/50'
-                    : 'bg-white/5 hover:bg-white/10 border border-transparent'
-                }`}
-              >
-                <span className="text-xl p-1.5 rounded-lg bg-black/40">{theme.icon}</span>
-                <div>
-                  <div className="text-xs font-bold text-white">{theme.name}</div>
-                  <div className="text-[10px] text-slate-400 line-clamp-1">{theme.description}</div>
-                </div>
-              </button>
-            ))}
+            {ROMANTIC_THEMES.map((theme) => {
+              const isSelected = activeTheme === theme.id;
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => handleSelectTheme(theme.id)}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition cursor-pointer ${
+                    isSelected
+                      ? 'bg-rose-500/30 border-2 border-rose-400 ring-2 ring-rose-400/50 shadow-lg'
+                      : 'bg-white/5 hover:bg-white/15 border border-white/10'
+                  }`}
+                >
+                  <span className="text-2xl p-2 rounded-xl bg-black/40 shrink-0">{theme.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="text-xs font-extrabold text-white truncate">{theme.name}</div>
+                      {isSelected && <span className="text-[10px] text-rose-300 font-bold flex items-center gap-0.5 shrink-0"><Check className="w-3 h-3" /> Both</span>}
+                    </div>
+                    <div className="text-[10px] text-rose-200/70 font-semibold">{theme.subtitle}</div>
+                    <div className="text-[10px] text-slate-400 line-clamp-1">{theme.description}</div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* ================= FILTERS MODAL POPOVER ================= */}
       {showFilters && (
-        <div className="absolute top-16 right-16 z-50 w-64 rounded-2xl bg-slate-900/95 p-4 border border-amber-400/40 shadow-2xl backdrop-blur-xl text-white animate-fade-in">
+        <div className="absolute top-16 right-4 sm:right-28 z-50 w-80 max-w-[90vw] rounded-2xl bg-slate-900/95 p-4 border border-amber-400/50 shadow-2xl backdrop-blur-xl text-white animate-fade-in max-h-[80vh] overflow-y-auto">
           <div className="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-              <Wand2 className="w-3.5 h-3.5" /> Flattering Video Filters
-            </span>
-            <button onClick={() => setShowFilters(false)} className="text-xs text-slate-400 hover:text-white">✕</button>
+            <div>
+              <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                <Wand2 className="w-3.5 h-3.5" /> Flattering Video Filters
+              </span>
+              <p className="text-[10px] text-slate-400">Applied automatically to both videos</p>
+            </div>
+            <button onClick={() => setShowFilters(false)} className="text-xs text-slate-400 hover:text-white p-1">✕</button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {ROMANTIC_FILTERS.map((filt) => (
-              <button
-                key={filt.id}
-                type="button"
-                onClick={() => handleSelectFilter(filt.id)}
-                className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl transition text-center ${
-                  activeFilter === filt.id
-                    ? 'bg-amber-500/30 border border-amber-400 ring-1 ring-amber-400/50'
-                    : 'bg-white/5 hover:bg-white/10 border border-transparent'
-                }`}
-              >
-                <span className="text-xl">{filt.icon}</span>
-                <span className="text-xs font-bold text-white">{filt.name}</span>
-              </button>
-            ))}
+          <div className="space-y-2">
+            {ROMANTIC_FILTERS.map((filt) => {
+              const isSelected = activeFilter === filt.id;
+              return (
+                <button
+                  key={filt.id}
+                  type="button"
+                  onClick={() => handleSelectFilter(filt.id)}
+                  className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition cursor-pointer ${
+                    isSelected
+                      ? 'bg-amber-500/30 border-2 border-amber-400 ring-2 ring-amber-400/50 shadow-lg'
+                      : 'bg-white/5 hover:bg-white/15 border border-white/10'
+                  }`}
+                >
+                  <span className="text-2xl p-2 rounded-xl bg-black/40 shrink-0">{filt.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="text-xs font-extrabold text-white truncate">{filt.name}</div>
+                      {isSelected && <span className="text-[10px] text-amber-300 font-bold flex items-center gap-0.5 shrink-0"><Check className="w-3 h-3" /> Both</span>}
+                    </div>
+                    <div className="text-[10px] text-amber-200/70 font-semibold">{filt.subtitle}</div>
+                    <div className="text-[10px] text-slate-400 line-clamp-1">{filt.description}</div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -560,7 +976,13 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
               /* SIDE-BY-SIDE CINEMA VIEW */
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 h-[440px] md:h-[480px]">
                 {/* 1. Partner (Remote) Container */}
-                <div className="relative rounded-3xl overflow-hidden shadow-2xl border-2 border-rose-400/60 bg-black/60 flex items-center justify-center group">
+                <div
+                  className="relative rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 bg-black/70 flex items-center justify-center group"
+                  style={{
+                    boxShadow: `0 0 35px ${currentFilterConfig.frameGlow}, 0 0 15px ${currentThemeConfig.glowColor}`,
+                    border: `2px solid ${currentFilterConfig.frameGlow}`,
+                  }}
+                >
                   <video
                     ref={remoteVideoRef}
                     autoPlay
@@ -574,6 +996,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   {remoteStream && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
+                  {remoteStream && <FilterOverlayEffect filterId={activeFilter} />}
 
                   {!remoteStream && (
                     /* Waiting / Ringing Placeholder */
@@ -591,6 +1014,12 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     </div>
                   )}
 
+                  {/* Active Filter Badge */}
+                  <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/50 text-white">
+                    <span>{currentFilterConfig.icon}</span>
+                    <span>{currentFilterConfig.name}</span>
+                  </div>
+
                   {/* Partner Name Badge */}
                   <div className="absolute bottom-3 left-3 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-white text-xs font-bold flex items-center gap-1.5 shadow-md">
                     <span>{partnerRole === 'boyfriend' ? '👑' : '🌸'}</span>
@@ -599,7 +1028,13 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 </div>
 
                 {/* 2. Self (Local) Container */}
-                <div className="relative rounded-3xl overflow-hidden shadow-2xl border-2 border-blue-400/60 bg-black/60 flex items-center justify-center group">
+                <div
+                  className="relative rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 bg-black/70 flex items-center justify-center group"
+                  style={{
+                    boxShadow: `0 0 35px ${currentFilterConfig.frameGlow}, 0 0 15px ${currentThemeConfig.glowColor}`,
+                    border: `2px solid ${currentFilterConfig.frameGlow}`,
+                  }}
+                >
                   <video
                     ref={localVideoRef}
                     autoPlay
@@ -614,6 +1049,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
+                  {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} />}
 
                   {(!localStream || isVideoOff) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-slate-900/80">
@@ -621,6 +1057,12 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       <p className="text-xs text-slate-300">Camera is turned off</p>
                     </div>
                   )}
+
+                  {/* Active Filter Badge */}
+                  <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/50 text-white">
+                    <span>{currentFilterConfig.icon}</span>
+                    <span>{currentFilterConfig.name}</span>
+                  </div>
 
                   {/* Self Name Badge */}
                   <div className="absolute bottom-3 left-3 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-white text-xs font-bold flex items-center gap-1.5 shadow-md">
@@ -632,7 +1074,13 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
               </div>
             ) : (
               /* PICTURE-IN-PICTURE (PIP) VIEW */
-              <div className="relative w-full h-[440px] md:h-[480px] rounded-3xl overflow-hidden shadow-2xl border-2 border-rose-400/60 bg-black/60 flex items-center justify-center">
+              <div
+                className="relative w-full h-[440px] md:h-[480px] rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 bg-black/70 flex items-center justify-center"
+                style={{
+                  boxShadow: `0 0 40px ${currentFilterConfig.frameGlow}, 0 0 15px ${currentThemeConfig.glowColor}`,
+                  border: `2px solid ${currentFilterConfig.frameGlow}`,
+                }}
+              >
                 {/* Main View: Partner */}
                 <video
                   ref={remoteVideoRef}
@@ -647,6 +1095,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 {remoteStream && (
                   <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                 )}
+                {remoteStream && <FilterOverlayEffect filterId={activeFilter} />}
 
                 {!remoteStream && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-black/50">
@@ -660,8 +1109,20 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   </div>
                 )}
 
-                {/* Floating Self Camera PiP (Heart/Pill shape) */}
-                <div className="absolute top-4 right-4 w-32 h-44 md:w-36 md:h-48 rounded-2xl overflow-hidden border-2 border-white/80 shadow-2xl bg-black z-20">
+                {/* Main View Filter Badge */}
+                <div className="absolute top-4 left-4 px-3 py-1 rounded-full text-[11px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/60 text-white">
+                  <span>{currentFilterConfig.icon}</span>
+                  <span>{currentFilterConfig.name}</span>
+                </div>
+
+                {/* Floating Self Camera PiP */}
+                <div
+                  className="absolute top-4 right-4 w-32 h-44 md:w-36 md:h-48 rounded-2xl overflow-hidden shadow-2xl bg-black z-20"
+                  style={{
+                    border: `2px solid ${currentFilterConfig.frameGlow}`,
+                    boxShadow: `0 0 20px ${currentFilterConfig.frameGlow}`,
+                  }}
+                >
                   <video
                     ref={pipVideoRef}
                     autoPlay
@@ -673,6 +1134,11 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     style={{ filter: currentFilterConfig.cssFilter }}
                     className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
                   />
+                  {localStream && !isVideoOff && (
+                    <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
+                  )}
+                  {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} />}
+
                   {(!localStream || isVideoOff) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-400 text-[10px]">
                       <VideoOff className="w-6 h-6 mb-1" />
@@ -701,7 +1167,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
               type="button"
               onClick={() => handleSendReaction(item.emoji)}
               title={item.label}
-              className="p-1.5 md:p-2 rounded-xl bg-white/10 hover:bg-rose-500/40 text-lg md:text-xl transition active:scale-125 transform shadow-xs hover:shadow-rose-400/30 shrink-0"
+              className="p-1.5 md:p-2 rounded-xl bg-white/10 hover:bg-rose-500/40 text-lg md:text-xl transition active:scale-125 transform shadow-xs hover:shadow-rose-400/30 shrink-0 cursor-pointer"
             >
               {item.emoji}
             </button>
@@ -717,7 +1183,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             type="button"
             onClick={handleToggleMute}
             title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-            className={`p-3 md:p-3.5 rounded-full transition shadow-lg active:scale-95 ${
+            className={`p-3 md:p-3.5 rounded-full transition shadow-lg active:scale-95 cursor-pointer ${
               isMuted
                 ? 'bg-rose-600 text-white ring-4 ring-rose-400/30'
                 : 'bg-white/15 hover:bg-white/25 text-white'
@@ -731,7 +1197,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             type="button"
             onClick={handleToggleVideo}
             title={isVideoOff ? 'Turn video on' : 'Turn video off'}
-            className={`p-3 md:p-3.5 rounded-full transition shadow-lg active:scale-95 ${
+            className={`p-3 md:p-3.5 rounded-full transition shadow-lg active:scale-95 cursor-pointer ${
               isVideoOff
                 ? 'bg-rose-600 text-white ring-4 ring-rose-400/30'
                 : 'bg-white/15 hover:bg-white/25 text-white'
@@ -748,7 +1214,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             onTouchStart={handleTouchHeartStart}
             onTouchEnd={handleTouchHeartEnd}
             title="Press & hold to connect your soul heart with your partner's video!"
-            className={`px-4 md:px-6 py-3 rounded-full font-extrabold text-xs md:text-sm flex items-center gap-2 transition shadow-xl active:scale-95 select-none ${
+            className={`px-4 md:px-6 py-3 rounded-full font-extrabold text-xs md:text-sm flex items-center gap-2 transition shadow-xl active:scale-95 select-none cursor-pointer ${
               touchingHeart
                 ? 'bg-gradient-to-r from-rose-500 via-pink-400 to-amber-300 text-white ring-4 ring-pink-300 animate-pulse'
                 : 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-rose-500/30'
@@ -763,7 +1229,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             type="button"
             onClick={handleEndCall}
             title="End Video Sanctuary Call"
-            className="p-3 md:p-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/40 ring-4 ring-rose-500/30 transition active:scale-95"
+            className="p-3 md:p-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/40 ring-4 ring-rose-500/30 transition active:scale-95 cursor-pointer"
           >
             <PhoneOff className="w-5 h-5" />
           </button>
