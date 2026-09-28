@@ -555,11 +555,16 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const roomKey = localStorage.getItem('love_app_realtime_room_key_v1');
     const videoTheme = localStorage.getItem('love_app_video_theme');
     const videoFilter = localStorage.getItem('love_app_video_filter');
+    const mashFortunes = localStorage.getItem(STORAGE_KEYS.MASH) || localStorage.getItem(PERMANENT_KEYS.MASH_VAULT);
 
     // Clear transient stats, coupons, animations, etc.
     localStorage.clear();
 
-    // Re-insert permanent data so written dreams, notes, milestones, memories, and photos are never lost!
+    // Re-insert permanent data so written dreams, notes, milestones, memories, mash fortunes, and photos are never lost!
+    if (mashFortunes) {
+      localStorage.setItem(STORAGE_KEYS.MASH, mashFortunes);
+      localStorage.setItem(PERMANENT_KEYS.MASH_VAULT, mashFortunes);
+    }
     if (dreams) {
       localStorage.setItem(STORAGE_KEYS.DREAMS, dreams);
       localStorage.setItem(PERMANENT_KEYS.DREAMS_VAULT, dreams);

@@ -14,6 +14,7 @@ import { ScratchCoupons } from './components/games/ScratchCoupons';
 import { AffectionWheel } from './components/games/AffectionWheel';
 import { CoupleQuiz } from './components/games/CoupleQuiz';
 import { MemoryWall } from './components/games/MemoryWall';
+import { MashGame } from './components/games/MashGame';
 import { RomanticVideoChat } from './components/video/RomanticVideoChat';
 import { IncomingCallModal } from './components/video/IncomingCallModal';
 import { soundFx } from './utils/audio';
@@ -27,6 +28,7 @@ import {
   Sparkles,
   HelpCircle,
   Camera,
+  Castle,
   Heart,
   RefreshCw,
   ChevronLeft,
@@ -39,6 +41,7 @@ type GameTab =
   | 'dreams'
   | 'notes'
   | 'flames'
+  | 'mash'
   | 'coupons'
   | 'wheel'
   | 'quiz'
@@ -86,6 +89,12 @@ const MainContent: React.FC = () => {
       id: 'flames',
       label: 'FLAMES Game',
       icon: <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />,
+    },
+    {
+      id: 'mash',
+      label: 'M.A.S.H. Destiny',
+      icon: <Castle className="w-4 h-4 text-violet-500 fill-violet-400" />,
+      badge: 'Classic',
     },
     {
       id: 'coupons',
@@ -211,6 +220,7 @@ const MainContent: React.FC = () => {
             {activeTab === 'dreams' && <DreamJournal />}
             {activeTab === 'notes' && <LoveNotesJourney />}
             {activeTab === 'flames' && <FlamesGame />}
+            {activeTab === 'mash' && <MashGame />}
             {activeTab === 'coupons' && <ScratchCoupons />}
             {activeTab === 'wheel' && <AffectionWheel />}
             {activeTab === 'quiz' && <CoupleQuiz />}

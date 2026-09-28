@@ -117,3 +117,33 @@ export interface JourneyMilestone {
   completedDate?: string;
   emoji: string;
 }
+
+export interface MashOption {
+  id: string;
+  text: string;
+  emoji: string;
+  eliminated?: boolean;
+  isWinner?: boolean;
+}
+
+export interface MashCategory {
+  id: string;
+  title: string;
+  icon: string;
+  options: MashOption[];
+  result?: MashOption;
+}
+
+export interface MashResult {
+  id: string;
+  timestamp: number;
+  magicNumber: number;
+  living: MashOption;
+  honeymoon: MashOption;
+  family: MashOption;
+  ride: MashOption;
+  pet: MashOption;
+  vibe: MashOption;
+  fiftyYears: MashOption;
+  story: string;
+}

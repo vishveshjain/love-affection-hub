@@ -7,6 +7,7 @@ import {
   LoveNote,
   JourneyMilestone,
   ChatMessage,
+  MashResult,
 } from '../types';
 
 export const DEFAULT_BOYFRIEND_AVATAR = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23dbeafe"/><stop offset="100%" stop-color="%2393c5fd"/></linearGradient></defs><rect width="200" height="200" rx="100" fill="url(%23bg)"/><circle cx="100" cy="115" r="45" fill="%23fed7aa"/><circle cx="100" cy="85" r="40" fill="%23fed7aa"/><path d="M 60 75 Q 100 35 140 75 Q 100 55 60 75 Z" fill="%23334155"/><circle cx="85" cy="85" r="5" fill="%231e293b"/><circle cx="115" cy="85" r="5" fill="%231e293b"/><circle cx="78" cy="95" r="6" fill="%23fda4af" opacity="0.6"/><circle cx="122" cy="95" r="6" fill="%23fda4af" opacity="0.6"/><path d="M 90 102 Q 100 112 110 102" stroke="%23e11d48" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M 50 170 Q 100 140 150 170 L 150 200 L 50 200 Z" fill="%233b82f6"/><polygon points="95,145 105,145 100,165" fill="%23f43f5e"/><text x="100" y="190" text-anchor="middle" font-size="20">👑</text></svg>`;
@@ -230,6 +231,7 @@ export const STORAGE_KEYS = {
   NOTES: 'love_app_notes_v2',
   MILESTONES: 'love_app_milestones_v2',
   CHAT: 'love_app_chat_messages_v2',
+  MASH: 'love_app_mash_fortunes_v1',
 };
 
 export const PERMANENT_KEYS = {
@@ -239,6 +241,7 @@ export const PERMANENT_KEYS = {
   MEMORIES_VAULT: 'love_app_permanent_memories_vault_v1',
   BF_PHOTO_VAULT: 'love_app_permanent_bf_photo_v1',
   GF_PHOTO_VAULT: 'love_app_permanent_gf_photo_v1',
+  MASH_VAULT: 'love_app_permanent_mash_vault_v1',
 };
 
 export const DEFAULT_MEMORIES: MemoryItem[] = [
@@ -502,6 +505,31 @@ export function saveChatMessages(messages: ChatMessage[]): void {
     localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(clean));
   } catch (e) {
     console.error('Failed to save chat', e);
+  }
+}
+
+export function loadMashFortunes(): MashResult[] {
+  try {
+    const raw =
+      localStorage.getItem(STORAGE_KEYS.MASH) ||
+      localStorage.getItem(PERMANENT_KEYS.MASH_VAULT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load MASH fortunes', e);
+  }
+  return [];
+}
+
+export function saveMashFortunes(fortunes: MashResult[]): void {
+  try {
+    const json = JSON.stringify(fortunes);
+    localStorage.setItem(STORAGE_KEYS.MASH, json);
+    localStorage.setItem(PERMANENT_KEYS.MASH_VAULT, json);
+  } catch (e) {
+    console.error('Failed to save MASH fortunes', e);
   }
 }
 
