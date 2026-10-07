@@ -1,5 +1,6 @@
 import { ChatAttachment, ChatAttachmentType } from '../types';
 import { getRoomKey } from './realtime';
+import { getActivePasscode, computeRoomSecurityToken } from './security';
 
 const NTFY_SERVERS = [
   'https://ntfy.adminforge.de',
@@ -148,8 +149,11 @@ export function imageToDataUrl(file: File, maxDimension = 1280, quality = 0.82):
 // Upload file to cloud/server topic
 export async function uploadToCloudServer(file: File): Promise<string | null> {
   const room = getRoomKey() || 'vishvesh-laura-love-nest-2026';
-  const cleanRoom = room.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase() || 'default';
-  const topic = `love-hub-${cleanRoom}-attachments`;
+  let topic = `love-hub-${room.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase() || 'default'}-attachments`;
+  if (room !== 'vishvesh-laura-love-nest-2026') {
+    const token = computeRoomSecurityToken(room, getActivePasscode());
+    topic = `love-hub-sec-${token.substring(0, 24)}-attachments`;
+  }
 
   const safeFilename = encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, '_'));
 

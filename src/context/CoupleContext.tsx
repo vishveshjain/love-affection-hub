@@ -29,6 +29,15 @@ import { getRandomWhisper } from '../utils/whispers';
 import { realtimeHub, getRoomKey, getClientId, RealtimePayload } from '../utils/realtime';
 import { saveCloudData, startAutoCloudSync, onCloudDataLoaded, saveMemoriesToLocal, fetchCloudData, pushToCloudNow } from '../utils/cloudStore';
 import { videoCallService } from '../utils/webrtc';
+import {
+  getActiveRoomId,
+  getActivePasscode,
+  isSanctuaryUnlocked,
+  lockSanctuary as performLockSanctuary,
+  unlockSanctuary as performUnlockSanctuary,
+  getRoomMeta,
+  DEFAULT_ROOM_ID,
+} from '../utils/security';
 
 interface CoupleContextType {
   profile: CoupleProfile;
@@ -42,6 +51,16 @@ interface CoupleContextType {
   partnerPhoto: string;
   partnerRole: UserRole;
   partnerOnline: boolean;
+  activeRoomId: string;
+  isUnlocked: boolean;
+  showAuthModal: boolean;
+  showInviteModal: boolean;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
+  openInviteModal: () => void;
+  closeInviteModal: () => void;
+  lockSanctuary: () => void;
+  switchRoom: (roomId: string, passcode: string, rememberMe?: boolean) => boolean;
   updateProfile: (updates: Partial<CoupleProfile>) => void;
   switchCurrentUserRole: (role: UserRole) => void;
   triggerAction: (action: AffectionActionType, customMsg?: string, incomingPayload?: RealtimePayload | boolean) => void;
@@ -62,6 +81,10 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [coupons, setCoupons] = useState<ScratchCoupon[]>(loadCoupons);
   const [showOnboarding, setShowOnboarding] = useState<boolean>(!profile.isConfigured);
   const [partnerOnline, setPartnerOnline] = useState<boolean>(false);
+  const [activeRoomId, setActiveRoomId] = useState<string>(getActiveRoomId);
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(isSanctuaryUnlocked);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(!isSanctuaryUnlocked());
+  const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
 
   const [actionState, setActionState] = useState<ActionAnimationState>({
     active: false,
@@ -362,8 +385,72 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     broadcastCouponChange(newCoupons);
   };
 
+  // Listen to sanctuary authentication state changes (unlock, lock, room switch)
   useEffect(() => {
-    realtimeHub.connect(getRoomKey());
+    const handleAuthChange = () => {
+      const currentRoom = getActiveRoomId();
+      const currentUnlocked = isSanctuaryUnlocked();
+      setActiveRoomId(currentRoom);
+      setIsUnlocked(currentUnlocked);
+      if (!currentUnlocked) {
+        setShowAuthModal(true);
+      } else {
+        setShowAuthModal(false);
+      }
+
+      // Reload state for current room
+      const newProf = loadProfile();
+      setProfile(newProf);
+      setStats(loadStats());
+      setCoupons(loadCoupons());
+      setShowOnboarding(!newProf.isConfigured);
+
+      // Reconnect realtimeHub to new room
+      realtimeHub.switchRoom(currentRoom, getActivePasscode());
+      realtimeHub.setUserInfo(
+        newProf.currentUserRole,
+        newProf.currentUserRole === 'boyfriend' ? newProf.boyfriendName : newProf.girlfriendName
+      );
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('love_app_auth_state_changed', handleAuthChange);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('love_app_auth_state_changed', handleAuthChange);
+      }
+    };
+  }, []);
+
+  const lockSanctuary = () => {
+    performLockSanctuary();
+    setIsUnlocked(false);
+    setShowAuthModal(true);
+    soundFx.playPop(480, 0.08);
+  };
+
+  const switchRoom = (roomId: string, passcode: string, rememberMe: boolean = true): boolean => {
+    const res = performUnlockSanctuary(roomId, passcode, rememberMe);
+    if (res.success) {
+      soundFx.playCelebration();
+      return true;
+    }
+    return false;
+  };
+
+  const openAuthModal = () => setShowAuthModal(true);
+  const closeAuthModal = () => {
+    if (isSanctuaryUnlocked()) {
+      setShowAuthModal(false);
+    }
+  };
+
+  const openInviteModal = () => setShowInviteModal(true);
+  const closeInviteModal = () => setShowInviteModal(false);
+
+  useEffect(() => {
+    realtimeHub.connect(getActiveRoomId(), getActivePasscode());
     realtimeHub.setUserInfo(profile.currentUserRole, currentUserName);
     videoCallService.myRole = profile.currentUserRole;
 
@@ -624,6 +711,16 @@ export const CoupleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         partnerPhoto,
         partnerRole,
         partnerOnline,
+        activeRoomId,
+        isUnlocked,
+        showAuthModal,
+        showInviteModal,
+        openAuthModal,
+        closeAuthModal,
+        openInviteModal,
+        closeInviteModal,
+        lockSanctuary,
+        switchRoom,
         updateProfile,
         updateProfilePhoto,
         switchCurrentUserRole,

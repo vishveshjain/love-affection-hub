@@ -1,5 +1,10 @@
-// Realtime Internet Sync Engine using high-availability European and global ntfy clusters with automatic failover
-// Enables true cross-device, cross-network, cross-country real-time communication.
+import {
+  getActiveRoomId,
+  getActivePasscode,
+  DEFAULT_ROOM_ID,
+  DEFAULT_ROOM_PASSCODE,
+  computeRoomSecurityToken,
+} from './security';
 
 export type RealtimeEventType =
   | 'CHAT_MESSAGE'
@@ -25,6 +30,7 @@ export interface RealtimePayload {
   id?: string;
   clientId: string;
   type: RealtimeEventType;
+  authHash?: string;
   senderRole?: 'boyfriend' | 'girlfriend';
   senderName?: string;
   targetRole?: 'boyfriend' | 'girlfriend';
@@ -34,7 +40,7 @@ export interface RealtimePayload {
   isHistorical?: boolean;
 }
 
-const DEFAULT_ROOM_KEY = 'vishvesh-laura-love-nest-2026';
+const DEFAULT_ROOM_KEY = DEFAULT_ROOM_ID;
 const ROOM_STORAGE_KEY = 'love_app_realtime_room_key_v1';
 const CLIENT_STORAGE_KEY = 'love_app_client_id_v2';
 
@@ -64,13 +70,7 @@ export function getClientId(): string {
 }
 
 export function getRoomKey(): string {
-  try {
-    const saved = localStorage.getItem(ROOM_STORAGE_KEY);
-    if (saved && saved.trim()) return saved.trim();
-  } catch {
-    // Ignore
-  }
-  return DEFAULT_ROOM_KEY;
+  return getActiveRoomId();
 }
 
 export function setRoomKey(key: string): void {
@@ -81,9 +81,13 @@ export function setRoomKey(key: string): void {
   }
 }
 
-export function getTopicName(roomKey: string): string {
-  const clean = roomKey.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-  return `love-${clean}`;
+export function getTopicName(roomKey: string, passcode?: string): string {
+  const activePass = passcode !== undefined ? passcode : getActivePasscode();
+  if (roomKey === DEFAULT_ROOM_ID && (!activePass || activePass === DEFAULT_ROOM_PASSCODE)) {
+    return `love-vishvesh-laura-love-nest-2026`;
+  }
+  const token = computeRoomSecurityToken(roomKey, activePass || '');
+  return `love-hub-sec-${token.substring(0, 24)}`;
 }
 
 export class RealtimeService {
@@ -139,14 +143,17 @@ export class RealtimeService {
     this.currentUserName = name;
   }
 
-  public connect(roomKey: string) {
-    if (this.eventSource && this.currentRoomKey === roomKey) {
+  public connect(roomKey?: string, passcode?: string) {
+    const targetRoom = roomKey || getRoomKey();
+    const targetPass = passcode !== undefined ? passcode : getActivePasscode();
+
+    if (this.eventSource && this.currentRoomKey === targetRoom) {
       return;
     }
 
     this.disconnect();
-    this.currentRoomKey = roomKey;
-    const topic = getTopicName(roomKey);
+    this.currentRoomKey = targetRoom;
+    const topic = getTopicName(targetRoom, targetPass);
 
     // Initial historical message fetch
     this.fetchRecentHistory(topic);
@@ -161,6 +168,12 @@ export class RealtimeService {
 
     // Start sending heartbeat to signal presence
     this.startHeartbeat();
+  }
+
+  public switchRoom(roomKey: string, passcode?: string) {
+    this.disconnect();
+    this.seenIds.clear();
+    this.connect(roomKey, passcode);
   }
 
   private initEventSource(topic: string) {
@@ -343,6 +356,16 @@ export class RealtimeService {
       return;
     }
 
+    // Cryptographic signature check: if message has an authHash, verify it matches our current room
+    if (payload.authHash) {
+      const activeRoom = this.currentRoomKey || getRoomKey();
+      const expectedToken = computeRoomSecurityToken(activeRoom, getActivePasscode()).substring(0, 24);
+      if (payload.authHash !== expectedToken) {
+        // Discard message from untrusted / different room source
+        return;
+      }
+    }
+
     // Deduplicate by message ID
     if (payload.id) {
       if (this.seenIds.has(payload.id)) return;
@@ -365,10 +388,14 @@ export class RealtimeService {
   }
 
   public async publish(payload: Omit<RealtimePayload, 'clientId'> & { clientId?: string }): Promise<boolean> {
+    const activeRoom = this.currentRoomKey || getRoomKey();
+    const token = computeRoomSecurityToken(activeRoom, getActivePasscode()).substring(0, 24);
+
     const fullPayload: RealtimePayload = {
       ...payload,
       id: payload.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       clientId: payload.clientId || getClientId(),
+      authHash: token,
       timestamp: payload.timestamp || Date.now(),
     };
 

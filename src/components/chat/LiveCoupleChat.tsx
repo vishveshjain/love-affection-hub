@@ -42,15 +42,32 @@ interface LiveCoupleChatProps {
 }
 
 export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall }) => {
-  const { profile, currentUserName, currentUserPhoto, partnerName, partnerPhoto, partnerRole, partnerOnline, updateProfilePhoto } = useCouple();
+  const {
+    profile,
+    currentUserName,
+    currentUserPhoto,
+    partnerName,
+    partnerPhoto,
+    partnerRole,
+    partnerOnline,
+    updateProfilePhoto,
+    activeRoomId,
+    openInviteModal,
+  } = useCouple();
   const [messages, setMessages] = useState<ChatMessage[]>(loadChatMessages);
   const [inputText, setInputText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [roomKey, setRoomKeyState] = useState(getRoomKey());
+  const [roomKey, setRoomKeyState] = useState(activeRoomId || getRoomKey());
   const [showRoomModal, setShowRoomModal] = useState(false);
-  const [tempRoomKey, setTempRoomKey] = useState(getRoomKey());
+  const [tempRoomKey, setTempRoomKey] = useState(activeRoomId || getRoomKey());
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setMessages(loadChatMessages());
+    setRoomKeyState(activeRoomId);
+    setTempRoomKey(activeRoomId);
+  }, [activeRoomId]);
 
   // Attachments State
   const [stagedAttachments, setStagedAttachments] = useState<ChatAttachment[]>([]);
@@ -419,17 +436,14 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
           {/* Secret Room Key Pill */}
           <button
             type="button"
-            onClick={() => {
-              setTempRoomKey(roomKey);
-              setShowRoomModal(true);
-            }}
-            title="Private Couple Room Code"
+            onClick={openInviteModal}
+            title="Private Couple Room Code & Passcode"
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-rose-200 text-slate-600 hover:text-rose-600 text-xs font-semibold shadow-xs transition cursor-pointer"
           >
             <Key className="w-3.5 h-3.5 text-rose-500" />
             <span className="hidden sm:inline">Room:</span>
             <span className="font-mono text-[11px] font-bold text-rose-700 truncate max-w-[100px]">
-              {roomKey}
+              {activeRoomId}
             </span>
           </button>
 

@@ -21,6 +21,7 @@ import {
   saveMemories,
   isCustomPhoto,
 } from './storage';
+import { getActiveRoomId, DEFAULT_ROOM_ID } from './security';
 
 export interface CloudCoupleData {
   version: number;
@@ -82,6 +83,9 @@ export function saveMemoriesToLocal(memories: MemoryItem[]) {
 }
 
 export async function fetchCloudData(): Promise<CloudCoupleData | null> {
+  if (getActiveRoomId() !== DEFAULT_ROOM_ID) {
+    return null;
+  }
   try {
     const res = await fetch(`${CLOUD_ENDPOINT}?t=${Date.now()}`, {
       headers: { Accept: 'application/json' },
@@ -250,6 +254,9 @@ function sanitizeForCloud(data: CloudCoupleData): CloudCoupleData {
 }
 
 export async function pushToCloudNow(): Promise<boolean> {
+  if (getActiveRoomId() !== DEFAULT_ROOM_ID) {
+    return true; // Non-default rooms persist via scoped local vaults and real-time ntfy sync
+  }
   if (!inMemoryCloudData) return false;
   isSaving = true;
   try {

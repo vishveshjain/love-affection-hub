@@ -10,6 +10,25 @@ import {
   MashResult,
   TelepathyScore,
 } from '../types';
+import { getActiveRoomId, DEFAULT_ROOM_ID, getRoomMeta } from './security';
+
+export function getScopedKey(baseKey: string): string {
+  const activeRoom = getActiveRoomId();
+  if (activeRoom === DEFAULT_ROOM_ID || !activeRoom) {
+    return baseKey; // 100% backward-compatible with Vishvesh & Laura's existing keys!
+  }
+  const clean = activeRoom.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  return `love_hub_${clean}_${baseKey}`;
+}
+
+export function getScopedPermanentKey(baseKey: string): string {
+  const activeRoom = getActiveRoomId();
+  if (activeRoom === DEFAULT_ROOM_ID || !activeRoom) {
+    return baseKey;
+  }
+  const clean = activeRoom.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  return `love_hub_${clean}_${baseKey}`;
+}
 
 export const DEFAULT_BOYFRIEND_AVATAR = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23dbeafe"/><stop offset="100%" stop-color="%2393c5fd"/></linearGradient></defs><rect width="200" height="200" rx="100" fill="url(%23bg)"/><circle cx="100" cy="115" r="45" fill="%23fed7aa"/><circle cx="100" cy="85" r="40" fill="%23fed7aa"/><path d="M 60 75 Q 100 35 140 75 Q 100 55 60 75 Z" fill="%23334155"/><circle cx="85" cy="85" r="5" fill="%231e293b"/><circle cx="115" cy="85" r="5" fill="%231e293b"/><circle cx="78" cy="95" r="6" fill="%23fda4af" opacity="0.6"/><circle cx="122" cy="95" r="6" fill="%23fda4af" opacity="0.6"/><path d="M 90 102 Q 100 112 110 102" stroke="%23e11d48" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M 50 170 Q 100 140 150 170 L 150 200 L 50 200 Z" fill="%233b82f6"/><polygon points="95,145 105,145 100,165" fill="%23f43f5e"/><text x="100" y="190" text-anchor="middle" font-size="20">👑</text></svg>`;
 
@@ -273,15 +292,29 @@ export const DEFAULT_MEMORIES: MemoryItem[] = [
 ];
 
 export function loadProfile(): CoupleProfile {
+  const activeRoom = getActiveRoomId();
+  const roomMeta = getRoomMeta(activeRoom);
+
+  const defaultBf = roomMeta?.partner1Name || (activeRoom === DEFAULT_ROOM_ID ? 'Vishvesh' : 'Partner 1');
+  const defaultGf = roomMeta?.partner2Name || (activeRoom === DEFAULT_ROOM_ID ? 'Laura' : 'Partner 2');
+  const defaultDate = roomMeta?.relationshipStartDate || (activeRoom === DEFAULT_ROOM_ID ? '2026-08-25' : new Date().toISOString().split('T')[0]);
+
+  const customInitialProfile: CoupleProfile = {
+    ...INITIAL_PROFILE,
+    boyfriendName: defaultBf,
+    girlfriendName: defaultGf,
+    relationshipStartDate: defaultDate,
+  };
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const raw = localStorage.getItem(getScopedKey(STORAGE_KEYS.PROFILE));
     let parsed: any = {};
     if (raw) {
       parsed = JSON.parse(raw);
     }
     // Check permanent photo vaults if custom photo is missing from current profile
-    const bfVault = localStorage.getItem(PERMANENT_KEYS.BF_PHOTO_VAULT);
-    const gfVault = localStorage.getItem(PERMANENT_KEYS.GF_PHOTO_VAULT);
+    const bfVault = localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.BF_PHOTO_VAULT));
+    const gfVault = localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.GF_PHOTO_VAULT));
 
     if (!isCustomPhoto(parsed.boyfriendPhoto) && isCustomPhoto(bfVault)) {
       parsed.boyfriendPhoto = bfVault;
@@ -290,35 +323,30 @@ export function loadProfile(): CoupleProfile {
       parsed.girlfriendPhoto = gfVault;
     }
 
-    // Migrate defaults if needed
-    if (!parsed.girlfriendName || parsed.girlfriendName === 'My Angel') {
-      parsed.girlfriendName = 'Laura';
+    if (!parsed.girlfriendName) {
+      parsed.girlfriendName = defaultGf;
     }
     if (!parsed.boyfriendName) {
-      parsed.boyfriendName = 'Vishvesh';
+      parsed.boyfriendName = defaultBf;
     }
-    if (
-      !parsed.relationshipStartDate ||
-      parsed.relationshipStartDate === '2024-02-14' ||
-      parsed.relationshipStartDate === '2024-08-25'
-    ) {
-      parsed.relationshipStartDate = '2026-08-25';
+    if (!parsed.relationshipStartDate) {
+      parsed.relationshipStartDate = defaultDate;
     }
-    return { ...INITIAL_PROFILE, ...parsed };
+    return { ...customInitialProfile, ...parsed };
   } catch (e) {
     console.error('Failed to load profile', e);
   }
-  return INITIAL_PROFILE;
+  return customInitialProfile;
 }
 
 export function saveProfile(profile: CoupleProfile): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.PROFILE), JSON.stringify(profile));
     if (isCustomPhoto(profile.boyfriendPhoto)) {
-      localStorage.setItem(PERMANENT_KEYS.BF_PHOTO_VAULT, profile.boyfriendPhoto);
+      localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.BF_PHOTO_VAULT), profile.boyfriendPhoto);
     }
     if (isCustomPhoto(profile.girlfriendPhoto)) {
-      localStorage.setItem(PERMANENT_KEYS.GF_PHOTO_VAULT, profile.girlfriendPhoto);
+      localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.GF_PHOTO_VAULT), profile.girlfriendPhoto);
     }
   } catch (e) {
     console.error('Failed to save profile', e);
@@ -327,7 +355,7 @@ export function saveProfile(profile: CoupleProfile): void {
 
 export function loadStats(): AffectionStats {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.STATS);
+    const raw = localStorage.getItem(getScopedKey(STORAGE_KEYS.STATS));
     if (raw) {
       return { ...INITIAL_STATS, ...JSON.parse(raw) };
     }
@@ -339,7 +367,7 @@ export function loadStats(): AffectionStats {
 
 export function saveStats(stats: AffectionStats): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(stats));
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.STATS), JSON.stringify(stats));
   } catch (e) {
     console.error('Failed to save stats', e);
   }
@@ -347,7 +375,7 @@ export function saveStats(stats: AffectionStats): void {
 
 export function loadCoupons(): ScratchCoupon[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.COUPONS);
+    const raw = localStorage.getItem(getScopedKey(STORAGE_KEYS.COUPONS));
     if (raw) {
       return JSON.parse(raw);
     }
@@ -359,15 +387,18 @@ export function loadCoupons(): ScratchCoupon[] {
 
 export function saveCoupons(coupons: ScratchCoupon[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.COUPONS, JSON.stringify(coupons));
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.COUPONS), JSON.stringify(coupons));
   } catch (e) {
     console.error('Failed to save coupons', e);
   }
 }
 
 export function loadDreams(): DreamItem[] {
+  const activeRoom = getActiveRoomId();
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.DREAMS) || localStorage.getItem(PERMANENT_KEYS.DREAMS_VAULT);
+    const raw =
+      localStorage.getItem(getScopedKey(STORAGE_KEYS.DREAMS)) ||
+      localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.DREAMS_VAULT));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -375,22 +406,54 @@ export function loadDreams(): DreamItem[] {
   } catch (e) {
     console.error('Failed to load dreams', e);
   }
-  return DEFAULT_DREAMS;
+
+  if (activeRoom === DEFAULT_ROOM_ID) {
+    return DEFAULT_DREAMS;
+  }
+
+  const roomMeta = getRoomMeta(activeRoom);
+  const bf = roomMeta?.partner1Name || 'Partner 1';
+  const gf = roomMeta?.partner2Name || 'Partner 2';
+  return [
+    {
+      id: `d-${Date.now()}-1`,
+      authorRole: 'girlfriend',
+      authorName: gf,
+      type: 'night_dream',
+      title: 'Our First Sunset Adventure',
+      content: `I dreamt we were sitting by a tranquil sea under a pastel sky, talking and laughing forever with ${bf}!`,
+      date: 'Recently',
+      hearts: 8,
+    },
+    {
+      id: `d-${Date.now()}-2`,
+      authorRole: 'boyfriend',
+      authorName: bf,
+      type: 'future_dream',
+      title: 'Our Cozy Dream Sanctuary',
+      content: `Hot cocoa, fairy lights, warm blankets, and holding ${gf} close while music plays softly.`,
+      date: 'Our Future',
+      hearts: 15,
+    },
+  ];
 }
 
 export function saveDreams(dreams: DreamItem[]): void {
   try {
     const json = JSON.stringify(dreams);
-    localStorage.setItem(STORAGE_KEYS.DREAMS, json);
-    localStorage.setItem(PERMANENT_KEYS.DREAMS_VAULT, json);
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.DREAMS), json);
+    localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.DREAMS_VAULT), json);
   } catch (e) {
     console.error('Failed to save dreams', e);
   }
 }
 
 export function loadLoveNotes(): LoveNote[] {
+  const activeRoom = getActiveRoomId();
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.NOTES) || localStorage.getItem(PERMANENT_KEYS.NOTES_VAULT);
+    const raw =
+      localStorage.getItem(getScopedKey(STORAGE_KEYS.NOTES)) ||
+      localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.NOTES_VAULT));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -398,14 +461,32 @@ export function loadLoveNotes(): LoveNote[] {
   } catch (e) {
     console.error('Failed to load notes', e);
   }
-  return DEFAULT_LOVE_NOTES;
+
+  if (activeRoom === DEFAULT_ROOM_ID) {
+    return DEFAULT_LOVE_NOTES;
+  }
+
+  const roomMeta = getRoomMeta(activeRoom);
+  const bf = roomMeta?.partner1Name || 'Partner 1';
+  const gf = roomMeta?.partner2Name || 'Partner 2';
+  return [
+    {
+      id: `n-${Date.now()}-1`,
+      authorRole: 'boyfriend',
+      authorName: bf,
+      title: `To My Incredible ${gf} 🌹`,
+      note: `Welcome to our private sanctuary! I am so happy to share this special space with you.`,
+      color: 'bg-rose-100 border-rose-300 text-rose-900',
+      date: 'Today',
+    },
+  ];
 }
 
 export function saveLoveNotes(notes: LoveNote[]): void {
   try {
     const json = JSON.stringify(notes);
-    localStorage.setItem(STORAGE_KEYS.NOTES, json);
-    localStorage.setItem(PERMANENT_KEYS.NOTES_VAULT, json);
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.NOTES), json);
+    localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.NOTES_VAULT), json);
   } catch (e) {
     console.error('Failed to save notes', e);
   }
@@ -413,7 +494,9 @@ export function saveLoveNotes(notes: LoveNote[]): void {
 
 export function loadMilestones(): JourneyMilestone[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.MILESTONES) || localStorage.getItem(PERMANENT_KEYS.MILESTONES_VAULT);
+    const raw =
+      localStorage.getItem(getScopedKey(STORAGE_KEYS.MILESTONES)) ||
+      localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.MILESTONES_VAULT));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -427,8 +510,8 @@ export function loadMilestones(): JourneyMilestone[] {
 export function saveMilestones(milestones: JourneyMilestone[]): void {
   try {
     const json = JSON.stringify(milestones);
-    localStorage.setItem(STORAGE_KEYS.MILESTONES, json);
-    localStorage.setItem(PERMANENT_KEYS.MILESTONES_VAULT, json);
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.MILESTONES), json);
+    localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.MILESTONES_VAULT), json);
   } catch (e) {
     console.error('Failed to save milestones', e);
   }
@@ -437,9 +520,9 @@ export function saveMilestones(milestones: JourneyMilestone[]): void {
 export function loadMemories(): MemoryItem[] {
   try {
     const raw =
-      localStorage.getItem(STORAGE_KEYS.MEMORIES) ||
-      localStorage.getItem(PERMANENT_KEYS.MEMORIES_VAULT) ||
-      localStorage.getItem('love_app_memories_v1');
+      localStorage.getItem(getScopedKey(STORAGE_KEYS.MEMORIES)) ||
+      localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.MEMORIES_VAULT)) ||
+      localStorage.getItem(getScopedKey('love_app_memories_v1'));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -453,20 +536,19 @@ export function loadMemories(): MemoryItem[] {
 export function saveMemories(memories: MemoryItem[]): void {
   try {
     const json = JSON.stringify(memories);
-    localStorage.setItem(STORAGE_KEYS.MEMORIES, json);
-    localStorage.setItem(PERMANENT_KEYS.MEMORIES_VAULT, json);
-    localStorage.setItem('love_app_memories_v1', json);
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.MEMORIES), json);
+    localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.MEMORIES_VAULT), json);
   } catch (e) {
     console.error('Failed to save memories', e);
   }
 }
 
 export function loadChatMessages(): ChatMessage[] {
+  const activeRoom = getActiveRoomId();
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CHAT);
+    const raw = localStorage.getItem(getScopedKey(STORAGE_KEYS.CHAT));
     if (raw) {
       const parsed: ChatMessage[] = JSON.parse(raw);
-      // Sanitize: strip any giant base64 photos to keep memory & network feather-light
       return parsed.map((m) => {
         if (m.senderPhoto && m.senderPhoto.length > 500) {
           const { senderPhoto, ...rest } = m;
@@ -478,34 +560,55 @@ export function loadChatMessages(): ChatMessage[] {
   } catch (e) {
     console.error('Failed to load chat', e);
   }
+
+  if (activeRoom === DEFAULT_ROOM_ID) {
+    return [
+      {
+        id: 'c1',
+        senderRole: 'boyfriend',
+        senderName: 'Vishvesh',
+        text: 'Hey my Laura! Look what I found for us 💖',
+        timestamp: Date.now() - 3600000,
+      },
+      {
+        id: 'c2',
+        senderRole: 'girlfriend',
+        senderName: 'Laura',
+        text: 'Vishvesh! This is so cute! Hug me right now! 🥰🫂',
+        timestamp: Date.now() - 1800000,
+      },
+    ];
+  }
+
+  const roomMeta = getRoomMeta(activeRoom);
+  const bf = roomMeta?.partner1Name || 'Partner 1';
+  const gf = roomMeta?.partner2Name || 'Partner 2';
   return [
     {
-      id: 'c1',
+      id: `c-init-1`,
       senderRole: 'boyfriend',
-      senderName: 'Vishvesh',
-      text: 'Hey my Laura! Look what I found for us 💖',
-      timestamp: Date.now() - 3600000,
+      senderName: bf,
+      text: `Welcome to our private sanctuary, my love! 💖✨`,
+      timestamp: Date.now() - 60000,
     },
     {
-      id: 'c2',
+      id: `c-init-2`,
       senderRole: 'girlfriend',
-      senderName: 'Laura',
-      text: 'Vishvesh! This is so cute! Hug me right now! 🥰🫂',
-      timestamp: Date.now() - 1800000,
+      senderName: gf,
+      text: `I love our private space! Nobody else can see this! 🥰🔒`,
+      timestamp: Date.now() - 30000,
     },
   ];
 }
 
 export function saveChatMessages(messages: ChatMessage[]): void {
   try {
-    // Sanitize before saving so localStorage quota is never exceeded
     const clean = messages.map((m) => {
       let msg: ChatMessage = { ...m };
       if (msg.senderPhoto && msg.senderPhoto.length > 500) {
         const { senderPhoto, ...rest } = msg;
         msg = rest as ChatMessage;
       }
-      // Protect localStorage from huge raw base64 attachments
       if (msg.attachment && msg.attachment.url && msg.attachment.url.startsWith('data:') && msg.attachment.url.length > 120000) {
         msg = {
           ...msg,
@@ -531,7 +634,7 @@ export function saveChatMessages(messages: ChatMessage[]): void {
       }
       return msg;
     });
-    localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(clean));
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.CHAT), JSON.stringify(clean));
   } catch (e) {
     console.error('Failed to save chat', e);
   }
@@ -540,8 +643,8 @@ export function saveChatMessages(messages: ChatMessage[]): void {
 export function loadMashFortunes(): MashResult[] {
   try {
     const raw =
-      localStorage.getItem(STORAGE_KEYS.MASH) ||
-      localStorage.getItem(PERMANENT_KEYS.MASH_VAULT);
+      localStorage.getItem(getScopedKey(STORAGE_KEYS.MASH)) ||
+      localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.MASH_VAULT));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -555,8 +658,8 @@ export function loadMashFortunes(): MashResult[] {
 export function saveMashFortunes(fortunes: MashResult[]): void {
   try {
     const json = JSON.stringify(fortunes);
-    localStorage.setItem(STORAGE_KEYS.MASH, json);
-    localStorage.setItem(PERMANENT_KEYS.MASH_VAULT, json);
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.MASH), json);
+    localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.MASH_VAULT), json);
   } catch (e) {
     console.error('Failed to save MASH fortunes', e);
   }
@@ -571,8 +674,8 @@ export const INITIAL_TELEPATHY_SCORE: TelepathyScore = {
 export function loadTelepathyScore(): TelepathyScore {
   try {
     const raw =
-      localStorage.getItem(STORAGE_KEYS.TELEPATHY) ||
-      localStorage.getItem(PERMANENT_KEYS.TELEPATHY_VAULT);
+      localStorage.getItem(getScopedKey(STORAGE_KEYS.TELEPATHY)) ||
+      localStorage.getItem(getScopedPermanentKey(PERMANENT_KEYS.TELEPATHY_VAULT));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed.totalRounds === 'number') return parsed;
@@ -586,8 +689,8 @@ export function loadTelepathyScore(): TelepathyScore {
 export function saveTelepathyScore(score: TelepathyScore): void {
   try {
     const json = JSON.stringify(score);
-    localStorage.setItem(STORAGE_KEYS.TELEPATHY, json);
-    localStorage.setItem(PERMANENT_KEYS.TELEPATHY_VAULT, json);
+    localStorage.setItem(getScopedKey(STORAGE_KEYS.TELEPATHY), json);
+    localStorage.setItem(getScopedPermanentKey(PERMANENT_KEYS.TELEPATHY_VAULT), json);
   } catch (e) {
     console.error('Failed to save telepathy score', e);
   }

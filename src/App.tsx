@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CoupleProvider, useCouple } from './context/CoupleContext';
 import { FloatingParticles } from './components/FloatingParticles';
 import { Navbar } from './components/Navbar';
@@ -19,6 +19,8 @@ import { TruthOrDare } from './components/games/TruthOrDare';
 import { WouldYouRather } from './components/games/WouldYouRather';
 import { RomanticVideoChat } from './components/video/RomanticVideoChat';
 import { IncomingCallModal } from './components/video/IncomingCallModal';
+import { SanctuaryAuthModal } from './components/auth/SanctuaryAuthModal';
+import { InvitePartnerModal } from './components/auth/InvitePartnerModal';
 import { soundFx } from './utils/audio';
 import {
   MessageCircle,
@@ -55,7 +57,18 @@ type GameTab =
 const MainContent: React.FC = () => {
   const { profile, resetAllData } = useCouple();
   const [activeTab, setActiveTab] = useState<GameTab>('chat');
+  const [urlRoom, setUrlRoom] = useState<string>('');
   const tabsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room') || params.get('sanctuary') || params.get('r');
+      if (roomParam) {
+        setUrlRoom(roomParam.trim());
+      }
+    }
+  }, []);
 
   const scrollTabs = (direction: 'left' | 'right') => {
     if (tabsRef.current) {
@@ -143,6 +156,12 @@ const MainContent: React.FC = () => {
 
       {/* Top Navbar */}
       <Navbar />
+
+      {/* Sanctuary Room Authentication & Lock Gate */}
+      <SanctuaryAuthModal initialRoomFromUrl={urlRoom} />
+
+      {/* Share / Invite Partner Modal */}
+      <InvitePartnerModal />
 
       {/* Onboarding / Setup Modal */}
       <OnboardingModal />
