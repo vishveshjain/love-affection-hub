@@ -11,7 +11,7 @@ import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
 import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
-import { Heart, Plus, CheckCircle2, Circle, Sparkles, MapPin, StickyNote, Trash2 } from 'lucide-react';
+import { Heart, Plus, CheckCircle2, Circle, Sparkles, MapPin, StickyNote, Trash2, X } from 'lucide-react';
 
 const NOTE_COLORS = [
   { name: 'Rose Pink', class: 'bg-rose-100 border-rose-300 text-rose-900' },
@@ -422,9 +422,24 @@ export const LoveNotesJourney: React.FC = () => {
 
       {/* Add Love Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddNote(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
           <div className="relative w-full max-w-md p-6 rounded-3xl bg-white shadow-2xl border border-rose-200">
-            <h4 className="text-lg font-bold text-slate-800 mb-1">Write a Love Note for {partnerName}</h4>
+            <button
+              type="button"
+              onClick={() => setShowAddNote(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h4 className="text-lg font-bold text-slate-800 mb-1 pr-6">Write a Love Note for {partnerName}</h4>
             <p className="text-xs text-slate-500 mb-4">
               Leave a sweet message to brighten their day!
             </p>
@@ -492,9 +507,24 @@ export const LoveNotesJourney: React.FC = () => {
 
       {/* Add Milestone Modal */}
       {showAddMilestone && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddMilestone(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
           <div className="relative w-full max-w-md p-6 rounded-3xl bg-white shadow-2xl border border-purple-200">
-            <h4 className="text-lg font-bold text-slate-800 mb-1">Add Journey Milestone</h4>
+            <button
+              type="button"
+              onClick={() => setShowAddMilestone(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h4 className="text-lg font-bold text-slate-800 mb-1 pr-6">Add Journey Milestone</h4>
             <p className="text-xs text-slate-500 mb-4">
               Plan your next exciting adventure or milestone with {partnerName}!
             </p>

@@ -156,7 +156,14 @@ export const SanctuaryAuthModal: React.FC<SanctuaryAuthModalProps> = ({ initialR
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto">
+    <div
+      onClick={(e) => {
+        if (isUnlocked && e.target === e.currentTarget) {
+          closeAuthModal();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto"
+    >
       <div className="relative w-full max-w-lg rounded-3xl bg-white border border-rose-100 shadow-2xl p-5 sm:p-7 space-y-5 my-8">
         {/* Floating gradient highlights */}
         <div className="absolute -top-16 -right-16 w-40 h-40 bg-rose-400/20 rounded-full blur-2xl pointer-events-none" />

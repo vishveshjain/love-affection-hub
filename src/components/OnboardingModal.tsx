@@ -4,7 +4,7 @@ import { UserRole, CoupleProfile } from '../types';
 import { fileToDataUrl, DEFAULT_BOYFRIEND_AVATAR, DEFAULT_GIRLFRIEND_AVATAR, isCustomPhoto } from '../utils/storage';
 import { soundFx } from '../utils/audio';
 import confetti from 'canvas-confetti';
-import { Heart, Sparkles, Upload, ArrowRight, UserCheck, Calendar, Camera } from 'lucide-react';
+import { Heart, Sparkles, Upload, ArrowRight, UserCheck, Calendar, Camera, X } from 'lucide-react';
 
 export const OnboardingModal: React.FC = () => {
   const { profile, updateProfile, updateProfilePhoto, showOnboarding, setShowOnboarding } = useCouple();
@@ -105,8 +105,25 @@ export const OnboardingModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          setShowOnboarding(false);
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in"
+    >
       <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white/95 p-6 md:p-8 shadow-2xl border border-rose-200">
+        {/* Close Button */}
+        <button
+          type="button"
+          onClick={() => setShowOnboarding(false)}
+          title="Close profile window"
+          className="absolute top-4 right-4 z-20 p-2 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer shadow-xs"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
         {/* Floating background heart badges */}
         <div className="absolute -right-8 -top-8 w-28 h-28 bg-rose-200/50 rounded-full blur-xl pointer-events-none" />
         <div className="absolute -left-8 -bottom-8 w-28 h-28 bg-purple-200/50 rounded-full blur-xl pointer-events-none" />
@@ -222,17 +239,28 @@ export const OnboardingModal: React.FC = () => {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                soundFx.playPop(620, 0.08);
-                setStep(2);
-              }}
-              className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold shadow-lg shadow-rose-500/25 transition-all active:scale-98"
-            >
-              <span>Next: Upload Photos</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="flex gap-3">
+              {profile.isConfigured && (
+                <button
+                  type="button"
+                  onClick={() => setShowOnboarding(false)}
+                  className="py-3 px-5 rounded-2xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playPop(620, 0.08);
+                  setStep(2);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold shadow-lg shadow-rose-500/25 transition-all active:scale-98 cursor-pointer"
+              >
+                <span>Next: Upload Photos</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -369,17 +397,26 @@ export const OnboardingModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition"
+                className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition cursor-pointer"
               >
                 Back
               </button>
+              {profile.isConfigured && (
+                <button
+                  type="button"
+                  onClick={() => setShowOnboarding(false)}
+                  className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
                   soundFx.playPop(620, 0.08);
                   setStep(3);
                 }}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold shadow-lg shadow-rose-500/25 transition-all active:scale-98"
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold shadow-lg shadow-rose-500/25 transition-all active:scale-98 cursor-pointer"
               >
                 <span>Next: Special Anniversary</span>
                 <ArrowRight className="w-4 h-4" />
@@ -426,14 +463,23 @@ export const OnboardingModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition"
+                className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition cursor-pointer"
               >
                 Back
               </button>
+              {profile.isConfigured && (
+                <button
+                  type="button"
+                  onClick={() => setShowOnboarding(false)}
+                  className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleFinish}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 hover:opacity-95 text-white font-bold text-base shadow-xl shadow-rose-500/30 transition-all transform active:scale-98"
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-purple-600 hover:opacity-95 text-white font-bold text-base shadow-xl shadow-rose-500/30 transition-all transform active:scale-98 cursor-pointer"
               >
                 <UserCheck className="w-5 h-5" />
                 <span>Enter Our Love Nest 💖</span>

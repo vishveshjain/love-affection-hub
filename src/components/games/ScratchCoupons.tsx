@@ -3,7 +3,7 @@ import { useCouple } from '../../context/CoupleContext';
 import { ScratchCoupon } from '../../types';
 import { soundFx } from '../../utils/audio';
 import confetti from 'canvas-confetti';
-import { Ticket, Sparkles, CheckCircle2, Plus, Gift } from 'lucide-react';
+import { Ticket, Sparkles, CheckCircle2, Plus, Gift, X } from 'lucide-react';
 
 interface ScratchCardProps {
   coupon: ScratchCoupon;
@@ -248,9 +248,24 @@ export const ScratchCoupons: React.FC = () => {
 
       {/* Add Custom Coupon Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddModal(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
           <div className="relative w-full max-w-md p-6 rounded-3xl bg-white shadow-2xl border border-rose-200">
-            <h4 className="text-lg font-bold text-slate-800 mb-2">Create Custom Love Coupon</h4>
+            <button
+              type="button"
+              onClick={() => setShowAddModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h4 className="text-lg font-bold text-slate-800 mb-2 pr-6">Create Custom Love Coupon</h4>
             <p className="text-xs text-slate-500 mb-4">
               Write a personalized voucher for {partnerName} to scratch off and claim!
             </p>

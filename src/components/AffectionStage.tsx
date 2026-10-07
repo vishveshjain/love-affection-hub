@@ -293,7 +293,18 @@ export const AffectionStage: React.FC = () => {
           {/* Interactive Mood Pill */}
           <div className="mt-2 relative">
             {editingBfMood ? (
-              <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-48 bg-white shadow-2xl rounded-2xl p-2 border border-slate-200 z-30 space-y-1">
+              <div className="absolute -bottom-28 left-1/2 -translate-x-1/2 w-52 bg-white shadow-2xl rounded-2xl p-2 border border-slate-200 z-30 space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 text-[11px] font-bold text-slate-500">
+                  <span>Choose Mood</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBfMood(false)}
+                    className="p-0.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                    title="Close"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 {MOOD_OPTIONS.map((mood) => (
                   <button
                     key={mood}
@@ -301,7 +312,7 @@ export const AffectionStage: React.FC = () => {
                       broadcastMoodChange('boyfriend', mood);
                       setEditingBfMood(false);
                     }}
-                    className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition truncate"
+                    className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition truncate cursor-pointer"
                   >
                     {mood}
                   </button>
@@ -527,7 +538,18 @@ export const AffectionStage: React.FC = () => {
           {/* Interactive Mood Pill */}
           <div className="mt-2 relative">
             {editingGfMood ? (
-              <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-48 bg-white shadow-2xl rounded-2xl p-2 border border-slate-200 z-30 space-y-1">
+              <div className="absolute -bottom-28 left-1/2 -translate-x-1/2 w-52 bg-white shadow-2xl rounded-2xl p-2 border border-slate-200 z-30 space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 text-[11px] font-bold text-slate-500">
+                  <span>Choose Mood</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingGfMood(false)}
+                    className="p-0.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                    title="Close"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 {MOOD_OPTIONS.map((mood) => (
                   <button
                     key={mood}
@@ -535,7 +557,7 @@ export const AffectionStage: React.FC = () => {
                       broadcastMoodChange('girlfriend', mood);
                       setEditingGfMood(false);
                     }}
-                    className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition truncate"
+                    className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition truncate cursor-pointer"
                   >
                     {mood}
                   </button>

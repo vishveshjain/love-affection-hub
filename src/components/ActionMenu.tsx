@@ -3,7 +3,7 @@ import { useCouple } from '../context/CoupleContext';
 import { AffectionActionType } from '../types';
 import { SWEET_WHISPER_TEMPLATES } from '../utils/whispers';
 import { soundFx } from '../utils/audio';
-import { Heart, Send, Sparkles, Volume2, ChevronDown, ChevronUp, BookOpen } from 'lucide-react';
+import { Heart, Send, Sparkles, Volume2, ChevronDown, ChevronUp, BookOpen, X } from 'lucide-react';
 
 export const ActionMenu: React.FC = () => {
   const { profile, partnerName, triggerAction } = useCouple();
@@ -176,11 +176,21 @@ export const ActionMenu: React.FC = () => {
 
       {/* Sweet Sentences Drawer */}
       {showWhisperList && (
-        <div className="mt-3 p-4 rounded-2xl bg-white border border-rose-200 shadow-md animate-fade-in">
-          <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-            <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
-            <span>Click Any Sweet Sentence to Whisper It to {partnerName}:</span>
-          </h4>
+        <div className="mt-3 p-4 rounded-2xl bg-white border border-rose-200 shadow-md animate-fade-in relative">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider flex items-center gap-1">
+              <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+              <span>Click Any Sweet Sentence to Whisper It to {partnerName}:</span>
+            </h4>
+            <button
+              type="button"
+              onClick={() => setShowWhisperList(false)}
+              className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+              title="Close drawer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
             {SWEET_WHISPER_TEMPLATES.map((sentence, idx) => (
               <button

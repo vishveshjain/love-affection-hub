@@ -74,7 +74,14 @@ Open the link on your phone and enter our secret passcode to enter our private n
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          closeInviteModal();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in"
+    >
       <div className="relative w-full max-w-md rounded-3xl bg-white border border-rose-100 shadow-2xl p-5 sm:p-7 space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-rose-100 pb-3">

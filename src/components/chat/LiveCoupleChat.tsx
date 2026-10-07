@@ -741,17 +741,27 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
 
       {/* Love Emoji Bar */}
       {showEmojis && (
-        <div className="p-2 mb-2 bg-rose-50/90 border border-rose-200 rounded-2xl flex flex-wrap gap-1.5 animate-fade-in shrink-0">
-          {LOVE_EMOJIS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => handleAddEmoji(emoji)}
-              className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
-            >
-              {emoji}
-            </button>
-          ))}
+        <div className="p-2 mb-2 bg-rose-50/90 border border-rose-200 rounded-2xl flex items-center justify-between gap-1.5 animate-fade-in shrink-0">
+          <div className="flex flex-wrap gap-1.5 flex-1">
+            {LOVE_EMOJIS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => handleAddEmoji(emoji)}
+                className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowEmojis(false)}
+            className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-100 transition cursor-pointer self-start ml-1"
+            title="Close emojis"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -820,7 +830,14 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
 
       {/* FULLSCREEN LIGHTBOX MODAL */}
       {lightboxAttachment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-fade-in">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setLightboxAttachment(null);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-fade-in"
+        >
           <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center justify-center">
             {/* Top Bar with Controls */}
             <div className="absolute -top-10 left-0 right-0 flex items-center justify-between text-white text-xs px-2">
@@ -867,9 +884,24 @@ export const LiveCoupleChat: React.FC<LiveCoupleChatProps> = ({ onStartVideoCall
 
       {/* Secret Room Key Configuration Modal */}
       {showRoomModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowRoomModal(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
           <div className="relative w-full max-w-md p-6 rounded-3xl bg-white shadow-2xl border border-rose-200">
-            <div className="flex items-center gap-2 text-rose-600 mb-2">
+            <button
+              type="button"
+              onClick={() => setShowRoomModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2 text-rose-600 mb-2 pr-6">
               <Key className="w-5 h-5" />
               <h4 className="text-lg font-bold text-slate-800">Private Couple Room Code</h4>
             </div>

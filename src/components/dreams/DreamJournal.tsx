@@ -6,7 +6,7 @@ import { soundFx } from '../../utils/audio';
 import { realtimeHub, getClientId } from '../../utils/realtime';
 import { saveCloudData, onCloudDataLoaded } from '../../utils/cloudStore';
 import confetti from 'canvas-confetti';
-import { Moon, Sparkles, Plus, Heart, Cloud, Compass, Trash2 } from 'lucide-react';
+import { Moon, Sparkles, Plus, Heart, Cloud, Compass, Trash2, X } from 'lucide-react';
 
 export const DreamJournal: React.FC = () => {
   const { profile, currentUserName, partnerName } = useCouple();
@@ -271,9 +271,24 @@ export const DreamJournal: React.FC = () => {
 
       {/* Add Dream Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAddModal(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+        >
           <div className="relative w-full max-w-md p-6 rounded-3xl bg-white shadow-2xl border border-purple-200">
-            <h4 className="text-lg font-bold text-slate-800 mb-1">Tell a Dream to {partnerName}</h4>
+            <button
+              type="button"
+              onClick={() => setShowAddModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h4 className="text-lg font-bold text-slate-800 mb-1 pr-6">Tell a Dream to {partnerName}</h4>
             <p className="text-xs text-slate-500 mb-4">
               Share a dream you had while sleeping, or a future wish for the two of you!
             </p>
