@@ -197,15 +197,91 @@ export interface VideoSignalData {
   sentAt?: number;
 }
 
-const VERIFIED_STUN_SERVERS = [
+// === ICE Server Configuration: STUN (discovery) + TURN (relay for cross-network calls) ===
+// TURN servers are ESSENTIAL for calls across different networks, NATs, and firewalls (e.g. India↔USA).
+// Without TURN, calls fail when both peers are behind symmetric NATs (~15-30% of all call attempts).
+
+// Static fallback TURN servers (Metered Open Relay Project — free, 20GB/month, no signup required)
+// Supports UDP, TCP, and TLS on standard ports 80 and 443 to bypass restrictive firewalls & symmetric NATs.
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
+  // STUN servers for direct P2P candidate discovery
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.nextcloud.com:443' },
+  { urls: 'stun:openrelay.metered.ca:80' },
+  // TURN relay servers (Open Relay by Metered.ca) — relays traffic when direct P2P fails (e.g. India↔USA)
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:80?transport=tcp',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:443',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ];
+
+// Cache for dynamically fetched TURN credentials (refreshed every 20 minutes)
+let cachedIceServers: RTCIceServer[] | null = null;
+let iceServersFetchedAt = 0;
+const ICE_CACHE_TTL_MS = 20 * 60 * 1000;
+
+/**
+ * Fetch ICE servers dynamically from Metered TURN API if configured,
+ * or fall back immediately to Open Relay Project STUN+TURN servers.
+ * Supports custom credentials via VITE_METERED_APP_NAME & VITE_METERED_API_KEY
+ * or localStorage 'love_metered_app_name' & 'love_metered_api_key'.
+ */
+export async function getIceServers(): Promise<RTCIceServer[]> {
+  // Return cached if fresh
+  if (cachedIceServers && Date.now() - iceServersFetchedAt < ICE_CACHE_TTL_MS) {
+    return cachedIceServers;
+  }
+
+  // Check for custom Metered app configuration
+  const envAppName = (import.meta as any).env?.VITE_METERED_APP_NAME;
+  const envApiKey = (import.meta as any).env?.VITE_METERED_API_KEY;
+  const localAppName = typeof localStorage !== 'undefined' ? localStorage.getItem('love_metered_app_name') : null;
+  const localApiKey = typeof localStorage !== 'undefined' ? localStorage.getItem('love_metered_api_key') : null;
+
+  const appName = envAppName || localAppName;
+  const apiKey = envApiKey || localApiKey;
+
+  if (appName && apiKey) {
+    try {
+      const resp = await fetch(
+        `https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`,
+        { signal: AbortSignal.timeout(4000) }
+      );
+      if (resp.ok) {
+        const turnServers: RTCIceServer[] = await resp.json();
+        if (Array.isArray(turnServers) && turnServers.length > 0) {
+          cachedIceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            ...turnServers,
+          ];
+          iceServersFetchedAt = Date.now();
+          console.log('[WebRTC ICE] Dynamic geo-routed TURN servers loaded:', turnServers.length);
+          return cachedIceServers;
+        }
+      }
+    } catch (err) {
+      console.warn('[WebRTC ICE] Dynamic fetch failed, falling back to Open Relay:', err);
+    }
+  }
+
+  // Use reliable Open Relay Project STUN+TURN servers (no delay, guaranteed availability)
+  cachedIceServers = FALLBACK_ICE_SERVERS;
+  iceServersFetchedAt = Date.now();
+  console.log('[WebRTC ICE] Using Open Relay STUN + TURN servers');
+  return FALLBACK_ICE_SERVERS;
+}
 
 type CallStateListener = (state: {
   status: 'idle' | 'calling' | 'incoming' | 'connected';
@@ -329,9 +405,25 @@ class RomanticVideoCallService {
 
   // Ensure PeerJS connection is active with unique client identifier
   public async ensurePeer(): Promise<string> {
+    // Reuse existing active peer
     if (this.peer && !this.peer.destroyed && !this.peer.disconnected && this.myPeerId) {
       return this.myPeerId;
     }
+
+    // Try to reconnect a disconnected (but not destroyed) peer
+    if (this.peer && !this.peer.destroyed && this.peer.disconnected && this.myPeerId) {
+      console.log('[WebRTC] Reconnecting disconnected peer:', this.myPeerId);
+      try {
+        this.peer.reconnect();
+        return this.myPeerId;
+      } catch {
+        console.warn('[WebRTC] Reconnect failed, creating new peer');
+      }
+    }
+
+    // Fetch TURN + STUN servers (dynamic with static fallback)
+    const iceServers = await getIceServers();
+    console.log('[WebRTC] ICE servers ready:', iceServers.length, 'servers');
 
     return new Promise((resolve) => {
       try {
@@ -341,8 +433,9 @@ class RomanticVideoCallService {
 
         const p = new PeerConstructor(preferredId, {
           config: {
-            iceServers: VERIFIED_STUN_SERVERS,
+            iceServers: iceServers,
             iceCandidatePoolSize: 10,
+            iceTransportPolicy: 'all', // Try direct P2P first, fall back to TURN relay
           },
         });
 
@@ -372,7 +465,11 @@ class RomanticVideoCallService {
             // Fallback to random ID on collision
             const randomId = `love_${this.myRole || 'user'}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
             const p2 = new PeerConstructor(randomId, {
-              config: { iceServers: VERIFIED_STUN_SERVERS },
+              config: {
+                iceServers: iceServers,
+                iceCandidatePoolSize: 10,
+                iceTransportPolicy: 'all',
+              },
             });
             p2.on('open', (id: string) => {
               this.peer = p2;
@@ -417,6 +514,28 @@ class RomanticVideoCallService {
     call.on('error', (err: any) => {
       console.warn('PeerJS media call error:', err);
     });
+
+    // Monitor underlying RTCPeerConnection for ICE status and auto-recovery
+    const pc = (call.peerConnection || call._peerConnection) as RTCPeerConnection | undefined;
+    if (pc) {
+      pc.addEventListener('iceconnectionstatechange', () => {
+        console.log('[WebRTC] ICE Connection State:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'failed') {
+          console.warn('[WebRTC] ICE failed across networks. Triggering iceRestart with TURN relay...');
+          try {
+            if (typeof (pc as any).restartIce === 'function') {
+              (pc as any).restartIce();
+            }
+          } catch (e) {
+            console.warn('[WebRTC] restartIce error:', e);
+          }
+        }
+      });
+
+      pc.addEventListener('connectionstatechange', () => {
+        console.log('[WebRTC] Connection state:', pc.connectionState);
+      });
+    }
   }
 
   // Connect PeerJS media stream directly to partner
