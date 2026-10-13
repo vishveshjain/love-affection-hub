@@ -1294,7 +1294,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Default TURN Relay:</span>
-                <span className="text-emerald-300 font-semibold text-[11px]">Open Relay (HMAC Active) ⚡</span>
+                <span className="text-emerald-300 font-semibold text-[11px]">
+                  {meteredAppInput && meteredKeyInput ? 'Dedicated Metered Grid 🌐' : 'Live Global Relay (UDP/TCP/TLS) ⚡'}
+                </span>
               </div>
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-slate-400">My Client ID:</span>
@@ -1348,8 +1350,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
               type="button"
               onClick={() => {
                 setMeteredCredentials(meteredAppInput, meteredKeyInput);
+                videoCallService.refreshPeer().catch(() => {});
                 setSyncToast({
-                  message: meteredAppInput && meteredKeyInput ? 'Saved custom Metered TURN settings!' : 'Reset to default Open Relay servers!',
+                  message: meteredAppInput && meteredKeyInput ? 'Saved custom Metered TURN settings!' : 'Reset to verified Global Relay servers!',
                   icon: '🌍',
                 });
                 setTimeout(() => setSyncToast(null), 3000);

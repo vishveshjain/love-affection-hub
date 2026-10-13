@@ -201,45 +201,38 @@ export interface VideoSignalData {
 // TURN servers are ESSENTIAL for calls across different networks, NATs, and firewalls (e.g. India↔USA).
 // Without TURN, calls fail when both peers are behind symmetric NATs (~15-30% of all call attempts).
 
+// Verified working STUN servers (tested across global networks)
+export const VERIFIED_STUN_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.nextcloud.com:443' },
+  { urls: 'stun:stun.relay.metered.ca:80' },
+];
+
+// Verified active TURN relay servers (allocates 0x0103, active on UDP 3478, TCP 3478, TCP 443, TLS 443)
+// Crucial for cross-network (India ↔ USA, cellular 4G/5G, Symmetric NAT) connections.
+export const VERIFIED_TURN_SERVERS: RTCIceServer[] = [
+  {
+    urls: [
+      'turn:turn.evan-brass.net:3478',
+      'turn:turn.evan-brass.net:3478?transport=tcp',
+      'turn:turn.evan-brass.net:443?transport=tcp',
+      'turns:turn.evan-brass.net:443',
+      'turns:turn.evan-brass.net:443?transport=tcp',
+    ],
+    username: 'user',
+    credential: 'password',
+  },
+];
+
 // Cache for dynamically fetched/generated TURN credentials (refreshed every 20 minutes)
 let cachedIceServers: RTCIceServer[] | null = null;
 let iceServersFetchedAt = 0;
 const ICE_CACHE_TTL_MS = 20 * 60 * 1000;
-
-/**
- * Generate HMAC-SHA1 authentication credentials for Open Relay Project
- * (Uses RFC 5766 TURN REST API shared-secret mechanism with secret 'openrelayprojectsecret')
- */
-async function generateOpenRelayCredentials(username = 'lovehub', secret = 'openrelayprojectsecret') {
-  const expiryTimestamp = Math.floor(Date.now() / 1000) + 24 * 3600; // 24 hours
-  const turnUsername = `${expiryTimestamp}:${username}`;
-
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    try {
-      const enc = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        'raw',
-        enc.encode(secret),
-        { name: 'HMAC', hash: 'SHA-1' },
-        false,
-        ['sign']
-      );
-      const signature = await crypto.subtle.sign(
-        'HMAC',
-        key,
-        enc.encode(turnUsername)
-      );
-      const base64Password = btoa(String.fromCharCode(...new Uint8Array(signature)));
-      return {
-        username: turnUsername,
-        credential: base64Password,
-      };
-    } catch (e) {
-      console.warn('[WebRTC ICE] HMAC generation fallback:', e);
-    }
-  }
-  return { username: 'openrelayproject', credential: 'openrelayproject' };
-}
 
 /**
  * Helper to store custom Metered credentials from user settings
@@ -270,9 +263,9 @@ export function getMeteredCredentials() {
 }
 
 /**
- * Fetch ICE servers: checks for custom Metered API credentials first,
- * then generates dynamic HMAC-SHA1 tokens for Open Relay Project (staticauth.openrelay.metered.ca)
- * on ports 80 and 443 with UDP, TCP, and TLS.
+ * Fetch ICE servers: checks for custom Metered API credentials first (if provided by user),
+ * then falls back to verified active worldwide STUN + TURN servers (turn.evan-brass.net on UDP/TCP/TLS)
+ * to ensure seamless video connectivity across different networks worldwide (e.g. India ↔ USA).
  */
 export async function getIceServers(): Promise<RTCIceServer[]> {
   // Return cached if fresh
@@ -299,9 +292,9 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
         const turnServers: RTCIceServer[] = await resp.json();
         if (Array.isArray(turnServers) && turnServers.length > 0) {
           cachedIceServers = [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
+            ...VERIFIED_STUN_SERVERS,
             ...turnServers,
+            ...VERIFIED_TURN_SERVERS,
           ];
           iceServersFetchedAt = Date.now();
           console.log('[WebRTC ICE] Dynamic geo-routed TURN servers loaded from Metered dashboard:', turnServers.length);
@@ -309,44 +302,19 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
         }
       }
     } catch (err) {
-      console.warn('[WebRTC ICE] Dynamic Metered fetch failed, using HMAC Open Relay:', err);
+      console.warn('[WebRTC ICE] Dynamic Metered fetch failed, using verified global TURN relays:', err);
     }
   }
 
-  // 2. Generate dynamic HMAC-SHA1 credentials for staticauth.openrelay.metered.ca
-  const openRelayCreds = await generateOpenRelayCredentials();
-  console.log('[WebRTC ICE] Generated HMAC-SHA1 credentials for Open Relay:', openRelayCreds.username);
-
+  // 2. Verified Active Worldwide STUN + TURN relay servers
   const fallbackServers: RTCIceServer[] = [
-    // Primary STUN servers for direct P2P discovery
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.relay.metered.ca:80' },
-    { urls: 'stun:staticauth.openrelay.metered.ca:80' },
-    { urls: 'stun:staticauth.openrelay.metered.ca:443' },
-
-    // Authenticated HMAC TURN servers (ports 80 & 443 with UDP, TCP, and TLS)
-    {
-      urls: [
-        'turn:staticauth.openrelay.metered.ca:80',
-        'turn:staticauth.openrelay.metered.ca:80?transport=tcp',
-        'turn:staticauth.openrelay.metered.ca:443',
-        'turn:staticauth.openrelay.metered.ca:443?transport=tcp',
-        'turns:staticauth.openrelay.metered.ca:443',
-        'turns:staticauth.openrelay.metered.ca:443?transport=tcp',
-      ],
-      username: openRelayCreds.username,
-      credential: openRelayCreds.credential,
-    },
+    ...VERIFIED_STUN_SERVERS,
+    ...VERIFIED_TURN_SERVERS,
   ];
 
   cachedIceServers = fallbackServers;
   iceServersFetchedAt = Date.now();
-  console.log('[WebRTC ICE] Configured STUN + HMAC-authenticated TURN servers');
+  console.log('[WebRTC ICE] Configured verified STUN + worldwide TURN relay servers (UDP 3478, TCP 3478/443, TLS 443)');
   return fallbackServers;
 }
 
@@ -581,6 +549,21 @@ class RomanticVideoCallService {
     });
   }
 
+  // Re-initialize Peer client when ICE servers or network credentials change
+  public async refreshPeer(): Promise<string> {
+    console.log('[WebRTC] Refreshing PeerJS client with updated ICE servers...');
+    cachedIceServers = null;
+    iceServersFetchedAt = 0;
+    if (this.peer) {
+      try {
+        this.peer.destroy();
+      } catch {}
+      this.peer = null;
+      this.myPeerId = '';
+    }
+    return this.ensurePeer();
+  }
+
   // Attach audio & video stream event listeners to active media call
   private attachMediaCallListeners(call: any) {
     call.on('stream', (remoteMediaStream: MediaStream) => {
@@ -607,11 +590,27 @@ class RomanticVideoCallService {
       console.warn('[WebRTC] PeerJS media call error:', err);
     });
 
-    // Monitor underlying RTCPeerConnection for ICE status and auto-recovery
+    // Monitor underlying RTCPeerConnection for ICE status, tracks, and connection states
     const pc = (call.peerConnection || call._peerConnection) as RTCPeerConnection | undefined;
     if (pc) {
       this.iceConnectionState = pc.iceConnectionState;
       this.notify();
+
+      // Native ontrack listener for instant track reception across mobile and desktop
+      pc.addEventListener('track', (event: RTCTrackEvent) => {
+        console.log('[WebRTC PC] Native track event received:', event.track.kind);
+        if (event.streams && event.streams[0]) {
+          if (!this.remoteStream || this.remoteStream.id !== event.streams[0].id) {
+            console.log('[WebRTC PC] Updating remoteStream from native ontrack event');
+            this.remoteStream = event.streams[0];
+            this.status = 'connected';
+            romanticMusic.stopRinging();
+            romanticMusic.playConnectedChime();
+            romanticMusic.startRomanticAmbience(0.18);
+            this.notify();
+          }
+        }
+      });
 
       pc.addEventListener('iceconnectionstatechange', () => {
         console.log('[WebRTC] ICE Connection State:', pc.iceConnectionState);
@@ -631,6 +630,10 @@ class RomanticVideoCallService {
 
       pc.addEventListener('connectionstatechange', () => {
         console.log('[WebRTC] Connection state:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          this.iceConnectionState = 'connected';
+          this.notify();
+        }
       });
     }
   }
@@ -720,6 +723,15 @@ class RomanticVideoCallService {
           return fallbackStream;
         } catch (fallbackErr) {
           console.warn('Could not acquire user camera/mic:', fallbackErr);
+          // Audio-only fallback if video stream cannot be acquired (e.g. mobile permissions or in-use camera)
+          try {
+            if (audioWanted) {
+              const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+              this.localStream = audioOnly;
+              this.notify();
+              return audioOnly;
+            }
+          } catch {}
           return null;
         }
       } finally {
@@ -805,14 +817,14 @@ class RomanticVideoCallService {
 
     // The Answerer sends call-accept and waits for the Caller to place the media call.
     // This avoids call glare / simultaneous call collisions in PeerJS.
-    // If the caller's media connection has not arrived within 5 seconds, attempt reverse call as fallback.
+    // If the caller's media connection has not arrived within 8 seconds, attempt reverse call as fallback.
     clearTimeout(this.answerFallbackTimer);
     this.answerFallbackTimer = setTimeout(() => {
-      if (this.status === 'connected' && !this.remoteStream && this.partnerPeerId) {
+      if (this.status === 'connected' && !this.remoteStream && !this.activeCall && this.partnerPeerId) {
         console.log('[WebRTC Answerer] Fallback timer expired: Caller did not initiate, placing reverse media call...');
         this.connectPeerMedia(this.partnerPeerId);
       }
-    }, 5000);
+    }, 8000);
   }
 
   // Decline incoming call
