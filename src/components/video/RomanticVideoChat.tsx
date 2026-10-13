@@ -6,6 +6,8 @@ import {
   ROMANTIC_FILTERS,
   RomanticThemeId,
   RomanticFilterId,
+  getMeteredCredentials,
+  setMeteredCredentials,
 } from '../../utils/webrtc';
 import { romanticMusic } from '../../utils/romanticMusic';
 import { soundFx } from '../../utils/audio';
@@ -26,6 +28,9 @@ import {
   Columns,
   ChevronLeft,
   Check,
+  Globe,
+  Settings,
+  X,
 } from 'lucide-react';
 
 const ROMANTIC_EMOJIS = [
@@ -595,6 +600,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
   const [syncToast, setSyncToast] = useState<{ message: string; icon: string } | null>(null);
+  const [iceState, setIceState] = useState<string>(videoCallService.iceConnectionState || 'new');
+  const [showNetworkSettings, setShowNetworkSettings] = useState(false);
+  const [meteredAppInput, setMeteredAppInput] = useState(() => getMeteredCredentials().appName);
+  const [meteredKeyInput, setMeteredKeyInput] = useState(() => getMeteredCredentials().apiKey);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -617,6 +626,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       setActiveTheme(state.activeTheme);
       setActiveFilter(state.activeFilter);
       setPartnerTouching(state.partnerTouchingHeart);
+      if (state.iceConnectionState) setIceState(state.iceConnectionState);
     });
 
     const unsubReaction = videoCallService.onReaction((reaction) => {
@@ -1118,6 +1128,28 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             <span className="hidden sm:inline">Filter</span>
           </button>
 
+          {/* Global Network / TURN Status Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowNetworkSettings((v) => !v);
+              setShowThemes(false);
+              setShowFilters(false);
+            }}
+            title="Global Network & TURN Relay Settings"
+            className={`px-2.5 py-1.5 rounded-xl transition active:scale-95 border flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer ${
+              iceState === 'connected'
+                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/40'
+                : iceState === 'failed'
+                ? 'bg-rose-500/30 hover:bg-rose-500/40 text-rose-200 border-rose-400/50 animate-pulse'
+                : 'bg-white/15 hover:bg-white/25 text-white border-white/20'
+            }`}
+          >
+            <Globe className="w-4 h-4 text-sky-300" />
+            <span className="hidden sm:inline">Network</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${iceState === 'connected' ? 'bg-emerald-400' : iceState === 'failed' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+          </button>
+
           {/* Ambient Romantic Harmony Sound Toggle */}
           <button
             type="button"
@@ -1220,6 +1252,120 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ================= NETWORK & GLOBAL TURN SETTINGS DRAWER ================= */}
+      {showNetworkSettings && (
+        <div className="absolute top-20 right-4 md:right-8 z-50 w-80 md:w-96 rounded-2xl bg-slate-900/95 border border-white/20 backdrop-blur-xl p-4 shadow-2xl text-white animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3">
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-sky-400" />
+              <div>
+                <h4 className="text-sm font-extrabold text-white">Global Network Settings</h4>
+                <p className="text-[10px] text-slate-300">Connect across different Wi-Fi & cellular networks</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowNetworkSettings(false)}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Connection Diagnostics */}
+          <div className="space-y-2 mb-4 text-xs">
+            <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">WebRTC ICE Link:</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  iceState === 'connected'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                    : iceState === 'failed'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-400/30'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                }`}>
+                  {iceState === 'connected' ? 'Connected (Relay/P2P) 🟢' : iceState === 'failed' ? 'Failed (Check key) 🔴' : `${iceState} 🟡`}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Default TURN Relay:</span>
+                <span className="text-emerald-300 font-semibold text-[11px]">Open Relay (HMAC Active) ⚡</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">My Client ID:</span>
+                <span className="text-slate-200 font-mono text-[10px] truncate max-w-[150px]">{videoCallService.myPeerId || 'Initializing...'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Dedicated Metered Account (Optional) */}
+          <div className="p-3 rounded-xl bg-sky-950/40 border border-sky-400/30 mb-3 space-y-2 text-xs">
+            <div className="font-extrabold text-sky-200 flex items-center justify-between">
+              <span>Dedicated Metered TURN</span>
+              <span className="text-[10px] text-sky-400 font-normal">Optional</span>
+            </div>
+            <p className="text-[10px] text-sky-200/80 leading-relaxed">
+              For dedicated high-speed relays between India & USA, sign up free at{' '}
+              <a
+                href="https://dashboard.metered.ca/signup"
+                target="_blank"
+                rel="noreferrer"
+                className="underline text-sky-300 hover:text-white font-bold"
+              >
+                dashboard.metered.ca
+              </a>{' '}
+              (20GB/month free, no card required) and paste below:
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-slate-300 font-semibold block">App Subdomain (e.g. "mycoupleapp"):</label>
+              <input
+                type="text"
+                value={meteredAppInput}
+                onChange={(e) => setMeteredAppInput(e.target.value)}
+                placeholder="mycoupleapp"
+                className="w-full px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/20 text-white text-xs focus:outline-none focus:border-sky-400"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-slate-300 font-semibold block">API Key:</label>
+              <input
+                type="password"
+                value={meteredKeyInput}
+                onChange={(e) => setMeteredKeyInput(e.target.value)}
+                placeholder="API Key from Metered Dashboard"
+                className="w-full px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/20 text-white text-xs focus:outline-none focus:border-sky-400"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMeteredCredentials(meteredAppInput, meteredKeyInput);
+                setSyncToast({
+                  message: meteredAppInput && meteredKeyInput ? 'Saved custom Metered TURN settings!' : 'Reset to default Open Relay servers!',
+                  icon: '🌍',
+                });
+                setTimeout(() => setSyncToast(null), 3000);
+                setShowNetworkSettings(false);
+              }}
+              className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-bold text-xs shadow-md transition active:scale-95 text-center cursor-pointer"
+            >
+              Save Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNetworkSettings(false)}
+              className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white font-bold text-xs transition active:scale-95 cursor-pointer"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -1354,7 +1500,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       <p className="text-sm font-extrabold text-rose-300">
                         {callStatus === 'calling' ? `Calling ${partnerName}...` : `Connecting with ${partnerName}...`}
                       </p>
-                      <p className="text-[11px] text-slate-400 mt-1">Waiting for video stream</p>
+                      <div className="flex items-center gap-1.5 mt-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-[11px] font-semibold text-rose-200">
+                        <span className={`w-2 h-2 rounded-full ${iceState === 'connected' ? 'bg-emerald-400' : iceState === 'failed' ? 'bg-rose-500' : 'bg-amber-400 animate-pulse'}`} />
+                        <span>{iceState === 'connected' ? 'Link Connected 🟢' : iceState === 'failed' ? 'Relay Error (Click Network) 🔴' : 'Negotiating Relay (STUN/TURN)... 🟡'}</span>
+                      </div>
                     </div>
                   )}
 
@@ -1449,7 +1598,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     <p className="text-sm font-extrabold text-rose-300">
                       {callStatus === 'calling' ? `Calling ${partnerName}...` : `Connecting with ${partnerName}...`}
                     </p>
-                    <p className="text-[11px] text-slate-400 mt-1">Waiting for video stream</p>
+                    <div className="flex items-center gap-1.5 mt-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-[11px] font-semibold text-rose-200">
+                      <span className={`w-2 h-2 rounded-full ${iceState === 'connected' ? 'bg-emerald-400' : iceState === 'failed' ? 'bg-rose-500' : 'bg-amber-400 animate-pulse'}`} />
+                      <span>{iceState === 'connected' ? 'Link Connected 🟢' : iceState === 'failed' ? 'Relay Error (Click Network) 🔴' : 'Negotiating Relay (STUN/TURN)... 🟡'}</span>
+                    </div>
                   </div>
                 )}
 

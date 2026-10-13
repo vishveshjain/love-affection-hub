@@ -201,41 +201,78 @@ export interface VideoSignalData {
 // TURN servers are ESSENTIAL for calls across different networks, NATs, and firewalls (e.g. India↔USA).
 // Without TURN, calls fail when both peers are behind symmetric NATs (~15-30% of all call attempts).
 
-// Static fallback TURN servers (Metered Open Relay Project — free, 20GB/month, no signup required)
-// Supports UDP, TCP, and TLS on standard ports 80 and 443 to bypass restrictive firewalls & symmetric NATs.
-const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
-  // STUN servers for direct P2P candidate discovery
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:openrelay.metered.ca:80' },
-  // TURN relay servers (Open Relay by Metered.ca) — relays traffic when direct P2P fails (e.g. India↔USA)
-  {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:80?transport=tcp',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turns:openrelay.metered.ca:443',
-      'turns:openrelay.metered.ca:443?transport=tcp',
-    ],
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
-
-// Cache for dynamically fetched TURN credentials (refreshed every 20 minutes)
+// Cache for dynamically fetched/generated TURN credentials (refreshed every 20 minutes)
 let cachedIceServers: RTCIceServer[] | null = null;
 let iceServersFetchedAt = 0;
 const ICE_CACHE_TTL_MS = 20 * 60 * 1000;
 
 /**
- * Fetch ICE servers dynamically from Metered TURN API if configured,
- * or fall back immediately to Open Relay Project STUN+TURN servers.
- * Supports custom credentials via VITE_METERED_APP_NAME & VITE_METERED_API_KEY
- * or localStorage 'love_metered_app_name' & 'love_metered_api_key'.
+ * Generate HMAC-SHA1 authentication credentials for Open Relay Project
+ * (Uses RFC 5766 TURN REST API shared-secret mechanism with secret 'openrelayprojectsecret')
+ */
+async function generateOpenRelayCredentials(username = 'lovehub', secret = 'openrelayprojectsecret') {
+  const expiryTimestamp = Math.floor(Date.now() / 1000) + 24 * 3600; // 24 hours
+  const turnUsername = `${expiryTimestamp}:${username}`;
+
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    try {
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(secret),
+        { name: 'HMAC', hash: 'SHA-1' },
+        false,
+        ['sign']
+      );
+      const signature = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        enc.encode(turnUsername)
+      );
+      const base64Password = btoa(String.fromCharCode(...new Uint8Array(signature)));
+      return {
+        username: turnUsername,
+        credential: base64Password,
+      };
+    } catch (e) {
+      console.warn('[WebRTC ICE] HMAC generation fallback:', e);
+    }
+  }
+  return { username: 'openrelayproject', credential: 'openrelayproject' };
+}
+
+/**
+ * Helper to store custom Metered credentials from user settings
+ */
+export function setMeteredCredentials(appName: string, apiKey: string) {
+  try {
+    if (appName.trim() && apiKey.trim()) {
+      localStorage.setItem('love_metered_app_name', appName.trim());
+      localStorage.setItem('love_metered_api_key', apiKey.trim());
+    } else {
+      localStorage.removeItem('love_metered_app_name');
+      localStorage.removeItem('love_metered_api_key');
+    }
+    cachedIceServers = null;
+    iceServersFetchedAt = 0;
+  } catch {}
+}
+
+export function getMeteredCredentials() {
+  try {
+    return {
+      appName: localStorage.getItem('love_metered_app_name') || '',
+      apiKey: localStorage.getItem('love_metered_api_key') || '',
+    };
+  } catch {
+    return { appName: '', apiKey: '' };
+  }
+}
+
+/**
+ * Fetch ICE servers: checks for custom Metered API credentials first,
+ * then generates dynamic HMAC-SHA1 tokens for Open Relay Project (staticauth.openrelay.metered.ca)
+ * on ports 80 and 443 with UDP, TCP, and TLS.
  */
 export async function getIceServers(): Promise<RTCIceServer[]> {
   // Return cached if fresh
@@ -243,14 +280,14 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
     return cachedIceServers;
   }
 
-  // Check for custom Metered app configuration
+  // 1. Check for custom Metered app configuration (from localStorage or Vite environment)
   const envAppName = (import.meta as any).env?.VITE_METERED_APP_NAME;
   const envApiKey = (import.meta as any).env?.VITE_METERED_API_KEY;
   const localAppName = typeof localStorage !== 'undefined' ? localStorage.getItem('love_metered_app_name') : null;
   const localApiKey = typeof localStorage !== 'undefined' ? localStorage.getItem('love_metered_api_key') : null;
 
-  const appName = envAppName || localAppName;
-  const apiKey = envApiKey || localApiKey;
+  const appName = localAppName || envAppName;
+  const apiKey = localApiKey || envApiKey;
 
   if (appName && apiKey) {
     try {
@@ -267,20 +304,50 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
             ...turnServers,
           ];
           iceServersFetchedAt = Date.now();
-          console.log('[WebRTC ICE] Dynamic geo-routed TURN servers loaded:', turnServers.length);
+          console.log('[WebRTC ICE] Dynamic geo-routed TURN servers loaded from Metered dashboard:', turnServers.length);
           return cachedIceServers;
         }
       }
     } catch (err) {
-      console.warn('[WebRTC ICE] Dynamic fetch failed, falling back to Open Relay:', err);
+      console.warn('[WebRTC ICE] Dynamic Metered fetch failed, using HMAC Open Relay:', err);
     }
   }
 
-  // Use reliable Open Relay Project STUN+TURN servers (no delay, guaranteed availability)
-  cachedIceServers = FALLBACK_ICE_SERVERS;
+  // 2. Generate dynamic HMAC-SHA1 credentials for staticauth.openrelay.metered.ca
+  const openRelayCreds = await generateOpenRelayCredentials();
+  console.log('[WebRTC ICE] Generated HMAC-SHA1 credentials for Open Relay:', openRelayCreds.username);
+
+  const fallbackServers: RTCIceServer[] = [
+    // Primary STUN servers for direct P2P discovery
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    { urls: 'stun:staticauth.openrelay.metered.ca:80' },
+    { urls: 'stun:staticauth.openrelay.metered.ca:443' },
+
+    // Authenticated HMAC TURN servers (ports 80 & 443 with UDP, TCP, and TLS)
+    {
+      urls: [
+        'turn:staticauth.openrelay.metered.ca:80',
+        'turn:staticauth.openrelay.metered.ca:80?transport=tcp',
+        'turn:staticauth.openrelay.metered.ca:443',
+        'turn:staticauth.openrelay.metered.ca:443?transport=tcp',
+        'turns:staticauth.openrelay.metered.ca:443',
+        'turns:staticauth.openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: openRelayCreds.username,
+      credential: openRelayCreds.credential,
+    },
+  ];
+
+  cachedIceServers = fallbackServers;
   iceServersFetchedAt = Date.now();
-  console.log('[WebRTC ICE] Using Open Relay STUN + TURN servers');
-  return FALLBACK_ICE_SERVERS;
+  console.log('[WebRTC ICE] Configured STUN + HMAC-authenticated TURN servers');
+  return fallbackServers;
 }
 
 type CallStateListener = (state: {
@@ -294,6 +361,7 @@ type CallStateListener = (state: {
   activeTheme: RomanticThemeId;
   activeFilter: RomanticFilterId;
   partnerTouchingHeart: boolean;
+  iceConnectionState: string;
 }) => void;
 
 type ReactionListener = (reaction: { id: string; emoji: string; x: number; y: number; senderRole?: UserRole }) => void;
@@ -332,8 +400,10 @@ class RomanticVideoCallService {
   private mediaPromise: Promise<MediaStream | null> | null = null;
   private unsubRealtime: (() => void) | null = null;
   private callInviteTimer: any = null;
+  private answerFallbackTimer: any = null;
 
   public status: 'idle' | 'calling' | 'incoming' | 'connected' = 'idle';
+  public iceConnectionState: string = 'new';
   public currentCallId: string | null = null;
   public myRole?: UserRole;
   public callerRole?: UserRole;
@@ -368,6 +438,7 @@ class RomanticVideoCallService {
       activeTheme: this.activeTheme,
       activeFilter: this.activeFilter,
       partnerTouchingHeart: this.partnerTouchingHeart,
+      iceConnectionState: this.iceConnectionState,
     };
     this.stateListeners.forEach((l) => l(snapshot));
   }
@@ -385,6 +456,7 @@ class RomanticVideoCallService {
       activeTheme: this.activeTheme,
       activeFilter: this.activeFilter,
       partnerTouchingHeart: this.partnerTouchingHeart,
+      iceConnectionState: this.iceConnectionState,
     });
     return () => this.stateListeners.delete(listener);
   }
@@ -442,12 +514,23 @@ class RomanticVideoCallService {
         p.on('open', (id: string) => {
           this.peer = p;
           this.myPeerId = id;
-          console.log('PeerJS ready with ID:', id);
+          console.log('[WebRTC] PeerJS ready with ID:', id);
           resolve(id);
         });
 
+        p.on('disconnected', () => {
+          console.warn('[WebRTC PeerJS] Disconnected from cloud broker, attempting reconnect...');
+          try {
+            p.reconnect();
+          } catch (e) {
+            console.warn('[WebRTC PeerJS] Reconnect failed:', e);
+          }
+        });
+
         p.on('call', async (incomingCall: any) => {
-          console.log('PeerJS incoming media call from:', incomingCall.peer);
+          console.log('[WebRTC] Incoming media call from partner:', incomingCall.peer);
+          clearTimeout(this.answerFallbackTimer);
+          this.answerFallbackTimer = null;
           this.activeCall = incomingCall;
 
           // Ensure local media is ready before answering
@@ -476,7 +559,12 @@ class RomanticVideoCallService {
               this.myPeerId = id;
               resolve(id);
             });
+            p2.on('disconnected', () => {
+              try { p2.reconnect(); } catch {}
+            });
             p2.on('call', async (incomingCall: any) => {
+              clearTimeout(this.answerFallbackTimer);
+              this.answerFallbackTimer = null;
               this.activeCall = incomingCall;
               if (!this.localStream) await this.getLocalMedia(true, true);
               incomingCall.answer(this.localStream || undefined);
@@ -496,7 +584,7 @@ class RomanticVideoCallService {
   // Attach audio & video stream event listeners to active media call
   private attachMediaCallListeners(call: any) {
     call.on('stream', (remoteMediaStream: MediaStream) => {
-      console.log('PeerJS remote stream received successfully!', remoteMediaStream.getTracks());
+      console.log('[WebRTC] PeerJS remote stream received successfully!', remoteMediaStream.getTracks());
       this.remoteStream = remoteMediaStream;
       this.status = 'connected';
       romanticMusic.stopRinging();
@@ -506,20 +594,29 @@ class RomanticVideoCallService {
     });
 
     call.on('close', () => {
-      if (this.status !== 'idle') {
+      // Only tear down the session if this was the current active call!
+      if (this.activeCall === call && this.status !== 'idle') {
+        console.log('[WebRTC] Active media call closed by peer');
         this.endCall(false);
+      } else {
+        console.log('[WebRTC] Ignored close from stale or superseded call');
       }
     });
 
     call.on('error', (err: any) => {
-      console.warn('PeerJS media call error:', err);
+      console.warn('[WebRTC] PeerJS media call error:', err);
     });
 
     // Monitor underlying RTCPeerConnection for ICE status and auto-recovery
     const pc = (call.peerConnection || call._peerConnection) as RTCPeerConnection | undefined;
     if (pc) {
+      this.iceConnectionState = pc.iceConnectionState;
+      this.notify();
+
       pc.addEventListener('iceconnectionstatechange', () => {
         console.log('[WebRTC] ICE Connection State:', pc.iceConnectionState);
+        this.iceConnectionState = pc.iceConnectionState;
+        this.notify();
         if (pc.iceConnectionState === 'failed') {
           console.warn('[WebRTC] ICE failed across networks. Triggering iceRestart with TURN relay...');
           try {
@@ -706,16 +803,24 @@ class RomanticVideoCallService {
       console.warn('acceptCall send error:', e);
     }
 
-    // Connect to caller peer directly if known
-    if (this.partnerPeerId) {
-      this.connectPeerMedia(this.partnerPeerId);
-    }
+    // The Answerer sends call-accept and waits for the Caller to place the media call.
+    // This avoids call glare / simultaneous call collisions in PeerJS.
+    // If the caller's media connection has not arrived within 5 seconds, attempt reverse call as fallback.
+    clearTimeout(this.answerFallbackTimer);
+    this.answerFallbackTimer = setTimeout(() => {
+      if (this.status === 'connected' && !this.remoteStream && this.partnerPeerId) {
+        console.log('[WebRTC Answerer] Fallback timer expired: Caller did not initiate, placing reverse media call...');
+        this.connectPeerMedia(this.partnerPeerId);
+      }
+    }, 5000);
   }
 
   // Decline incoming call
   public async declineCall(myRole: UserRole) {
     clearInterval(this.callInviteTimer);
     this.callInviteTimer = null;
+    clearTimeout(this.answerFallbackTimer);
+    this.answerFallbackTimer = null;
     romanticMusic.stopRinging();
     const decliningCallId = this.currentCallId;
     this.currentCallId = null;
@@ -736,6 +841,9 @@ class RomanticVideoCallService {
   public async endCall(notifyRemote: boolean = true) {
     clearInterval(this.callInviteTimer);
     this.callInviteTimer = null;
+    clearTimeout(this.answerFallbackTimer);
+    this.answerFallbackTimer = null;
+    this.iceConnectionState = 'new';
     romanticMusic.stopRinging();
     romanticMusic.stopRomanticAmbience();
     romanticMusic.playHangupChime();
