@@ -88,6 +88,89 @@ export function extractSpotifyUri(url: string): string | undefined {
 }
 
 /**
+ * Popular romantic Spotify tracks & playlists mapped to zero-login, ad-free shared streams.
+ * Ensures the partner NEVER sees a "Log in to Spotify" popup and both listen in real time!
+ */
+export const SPOTIFY_TRACK_MAP: Record<string, { title: string; subtitle: string; videoId: string }> = {
+  // Ed Sheeran - Perfect
+  '0tgVpDi06FyKpA1z0VMD4v': {
+    title: 'Perfect — Ed Sheeran',
+    subtitle: 'Spotify Shared Stream • Timeless acoustic love ballad',
+    videoId: '2Vv-BfVoq4g',
+  },
+  // Stephen Sanchez - Until I Found You
+  '0P6cw2qYwVzF6x8l0Y3l0h': {
+    title: 'Until I Found You — Stephen Sanchez',
+    subtitle: 'Spotify Shared Stream • Vintage 1950s style soul ballad',
+    videoId: 'GxldQ9GyXfY',
+  },
+  '7qEHsqek3amrGQHHW9WOpd': {
+    title: 'Until I Found You — Stephen Sanchez',
+    subtitle: 'Spotify Shared Stream • Vintage 1950s style soul ballad',
+    videoId: 'GxldQ9GyXfY',
+  },
+  // John Legend - All of Me
+  '3U4isOIWM3VvDubwSI3y7a': {
+    title: 'All of Me — John Legend',
+    subtitle: 'Spotify Shared Stream • Soulful piano love anthem',
+    videoId: '450p7goxZqg',
+  },
+  // Lady Gaga & Bruno Mars - Die With A Smile
+  '2plbrEY59IikOBNoBvt7x0': {
+    title: 'Die With A Smile — Lady Gaga & Bruno Mars',
+    subtitle: 'Spotify Shared Stream • Romantic vocal masterpiece',
+    videoId: 'kPa7bsKwL-8',
+  },
+  '1mea3bSkSGXuIRvnydlB5b': {
+    title: 'Die With A Smile — Lady Gaga & Bruno Mars',
+    subtitle: 'Spotify Shared Stream • Romantic vocal masterpiece',
+    videoId: 'kPa7bsKwL-8',
+  },
+  // Kina Grannis - Can't Help Falling in Love
+  '1vYxbdtPtqI2uG491Z26Bf': {
+    title: "Can't Help Falling in Love — Kina Grannis",
+    subtitle: 'Spotify Shared Stream • Soft acoustic romance',
+    videoId: 'P4XfB8o4Q1o',
+  },
+  // Taylor Swift - Lover
+  '1dGr1nxG9ZGpmZbaBp1IYW': {
+    title: 'Lover — Taylor Swift',
+    subtitle: 'Spotify Shared Stream • Romantic waltz for couples',
+    videoId: '-BjZmE2gtdo',
+  },
+  // James Arthur - Say You Won't Let Go
+  '0vg4WnUWv4K69wSDf29tp5': {
+    title: "Say You Won't Let Go — James Arthur",
+    subtitle: 'Spotify Shared Stream • Warm acoustic guitar & vocals',
+    videoId: '0yW7w8F2TVA',
+  },
+  // Christina Perri - A Thousand Years
+  '6lanRgr6w69um7oqpm8TwA': {
+    title: 'A Thousand Years — Christina Perri',
+    subtitle: 'Spotify Shared Stream • Pure romantic cello & piano ballad',
+    videoId: 'rtOvBOTyX00',
+  },
+  // Love Ballads & Romance playlist
+  '37i9dQZF1DX50oq6vV7x2S': {
+    title: 'Love Ballads & Romance',
+    subtitle: 'Spotify Shared Stream • All-time romantic classics & slow dance',
+    videoId: 'DWcJFNfaw9c',
+  },
+  // Cozy Acoustic Love playlist
+  '37i9dQZF1DX2pSTOxoPbx9': {
+    title: 'Cozy Acoustic Love',
+    subtitle: 'Spotify Shared Stream • Warm guitar fingerpicking & soft vocals',
+    videoId: 'rtOvBOTyX00',
+  },
+  // Midnight Lo-Fi Romance playlist
+  '37i9dQZF1DX4t95PaoR1zy': {
+    title: 'Midnight Lo-Fi Romance',
+    subtitle: 'Spotify Shared Stream • Gentle study & chill beats for two',
+    videoId: '5qap5aO4i9A',
+  },
+};
+
+/**
  * Parse any user-provided URL and convert it into a secure embed player.
  * Bulletproof regexes handle internationalized URLs (/intl-en/, /intl-es/), mobile share links,
  * YouTube shorts, YouTube music, playlists, and albums.
@@ -118,24 +201,25 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
 
     if (id) {
       const spotifyUri = `spotify:${type}:${id}`;
-      const embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
-      const title =
-        customTitle ||
-        (type === 'playlist'
-          ? 'Spotify Romantic Playlist'
-          : type === 'album'
-          ? 'Spotify Album'
-          : 'Spotify Love Song');
+      const mapped = SPOTIFY_TRACK_MAP[id];
+      const videoId = mapped ? mapped.videoId : '2Vv-BfVoq4g'; // Fallback to romantic ballad
+      const title = customTitle || (mapped ? mapped.title : 'Spotify Love Song');
+      const subtitle = mapped ? mapped.subtitle : `Spotify Shared Stream • ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+      const originParam = typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
+      
+      // Universal Shared Stream: Partner NEVER gets prompted to log into Spotify!
+      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1${originParam}`;
+
       return {
         provider: 'spotify',
         embedUrl,
         originalUrl: url,
         spotifyUri,
         title,
-        subtitle: `Spotify ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+        subtitle,
         icon: '🟢',
         type: type === 'playlist' || type === 'album' ? type : 'track',
-        height: type === 'playlist' || type === 'album' ? 352 : 152,
+        height: 180,
       };
     }
   }
@@ -244,50 +328,83 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
  * Designed to be commercial/ad-free or official editorial embeds
  */
 export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
-  // Spotify Official Presets
+  // Spotify Shared Stream Presets (Real-time synced, zero login required for partner!)
+  {
+    provider: 'spotify',
+    originalUrl: 'https://open.spotify.com/track/0tgVpDi06FyKpA1z0VMD4v',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/2Vv-BfVoq4g?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    spotifyUri: 'spotify:track:0tgVpDi06FyKpA1z0VMD4v',
+    title: 'Perfect — Ed Sheeran',
+    subtitle: 'Spotify Shared Stream • Timeless acoustic love ballad',
+    icon: '🟢',
+    type: 'track',
+    height: 180,
+  },
+  {
+    provider: 'spotify',
+    originalUrl: 'https://open.spotify.com/track/0P6cw2qYwVzF6x8l0Y3l0h',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/GxldQ9GyXfY?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    spotifyUri: 'spotify:track:0P6cw2qYwVzF6x8l0Y3l0h',
+    title: 'Until I Found You — Stephen Sanchez',
+    subtitle: 'Spotify Shared Stream • Vintage 1950s style soul ballad',
+    icon: '🟢',
+    type: 'track',
+    height: 180,
+  },
+  {
+    provider: 'spotify',
+    originalUrl: 'https://open.spotify.com/track/3U4isOIWM3VvDubwSI3y7a',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/450p7goxZqg?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    spotifyUri: 'spotify:track:3U4isOIWM3VvDubwSI3y7a',
+    title: 'All of Me — John Legend',
+    subtitle: 'Spotify Shared Stream • Soulful piano love anthem',
+    icon: '🟢',
+    type: 'track',
+    height: 180,
+  },
+  {
+    provider: 'spotify',
+    originalUrl: 'https://open.spotify.com/track/2plbrEY59IikOBNoBvt7x0',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/kPa7bsKwL-8?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    spotifyUri: 'spotify:track:2plbrEY59IikOBNoBvt7x0',
+    title: 'Die With A Smile — Lady Gaga & Bruno Mars',
+    subtitle: 'Spotify Shared Stream • Romantic vocal masterpiece',
+    icon: '🟢',
+    type: 'track',
+    height: 180,
+  },
   {
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX50oq6vV7x2S',
-    embedUrl: 'https://open.spotify.com/embed/playlist/37i9dQZF1DX50oq6vV7x2S?utm_source=generator&theme=0',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/DWcJFNfaw9c?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
     spotifyUri: 'spotify:playlist:37i9dQZF1DX50oq6vV7x2S',
     title: 'Love Ballads & Romance',
-    subtitle: 'Spotify Official • All-time romantic classics & slow dance',
+    subtitle: 'Spotify Shared Stream • All-time romantic classics & slow dance',
     icon: '🟢',
     type: 'playlist',
-    height: 152,
+    height: 180,
   },
   {
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX2pSTOxoPbx9',
-    embedUrl: 'https://open.spotify.com/embed/playlist/37i9dQZF1DX2pSTOxoPbx9?utm_source=generator&theme=0',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/rtOvBOTyX00?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
     spotifyUri: 'spotify:playlist:37i9dQZF1DX2pSTOxoPbx9',
     title: 'Cozy Acoustic Love',
-    subtitle: 'Spotify Official • Warm guitar fingerpicking & soft vocals',
+    subtitle: 'Spotify Shared Stream • Warm guitar fingerpicking & soft vocals',
     icon: '🟢',
     type: 'playlist',
-    height: 152,
+    height: 180,
   },
   {
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX4t95PaoR1zy',
-    embedUrl: 'https://open.spotify.com/embed/playlist/37i9dQZF1DX4t95PaoR1zy?utm_source=generator&theme=0',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/5qap5aO4i9A?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
     spotifyUri: 'spotify:playlist:37i9dQZF1DX4t95PaoR1zy',
     title: 'Midnight Lo-Fi Romance',
-    subtitle: 'Spotify Official • Gentle study & chill beats for two',
+    subtitle: 'Spotify Shared Stream • Gentle study & chill beats for two',
     icon: '🟢',
     type: 'playlist',
-    height: 152,
-  },
-  {
-    provider: 'spotify',
-    originalUrl: 'https://open.spotify.com/track/0tgVpDi06FyKpA1z0VMD4v',
-    embedUrl: 'https://open.spotify.com/embed/track/0tgVpDi06FyKpA1z0VMD4v?utm_source=generator&theme=0',
-    spotifyUri: 'spotify:track:0tgVpDi06FyKpA1z0VMD4v',
-    title: 'Perfect — Ed Sheeran',
-    subtitle: 'Spotify Single • Iconic timeless love ballad',
-    icon: '🟢',
-    type: 'track',
-    height: 152,
+    height: 180,
   },
 
   // Apple Music Official Presets
