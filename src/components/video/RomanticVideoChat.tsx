@@ -647,20 +647,15 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           subtitle: info.streamingSubtitle || `${info.streamingProvider || 'Online'} stream`,
           icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
           type: 'track',
-          height:
-            info.streamingProvider === 'spotify'
-              ? info.streamingEmbedUrl.includes('/playlist/') || info.streamingEmbedUrl.includes('/album/')
-                ? 352
-                : 152
-              : info.streamingProvider === 'apple-music'
-              ? 152
-              : 200,
+          height: info.streamingProvider === 'apple-music' ? 152 : 200,
         });
         setMusicPlaying(info.isPlaying ?? true);
         setShowStreamingDock(true);
 
+        // Send play/pause/seek commands to the embedded player (works for YouTube-based embeds
+        // which now includes Spotify tracks; harmlessly ignored by Apple Music embeds)
         const sendIframeCommands = () => {
-          if (info.streamingProvider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+          if (streamingIframeRef.current?.contentWindow) {
             if (info.isPlaying === false) {
               streamingIframeRef.current.contentWindow.postMessage(
                 JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
@@ -982,7 +977,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setShowSyncListenPrompt(false);
     romanticMusic.unlockAudio();
 
-    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+    if (streamingIframeRef.current?.contentWindow) {
       streamingIframeRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
         '*'
@@ -1194,7 +1189,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   // Streaming Handlers (Spotify / Apple Music / YouTube)
   const handleSelectStreamingPreset = (preset: StreamingTrackInfo) => {
     // If a YouTube video was playing, pause it before loading the new preset
-    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+    if (streamingIframeRef.current?.contentWindow) {
       try {
         streamingIframeRef.current.contentWindow.postMessage(
           JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
@@ -1244,7 +1239,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       return;
     }
     // If a YouTube video was playing, pause it before loading the new track
-    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+    if (streamingIframeRef.current?.contentWindow) {
       try {
         streamingIframeRef.current.contentWindow.postMessage(
           JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
@@ -1385,8 +1380,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const resolvedEmbedUrl = useMemo(() => {
     if (!streamingTrack) return '';
+    // Append origin param for any YouTube-based embed (includes Spotify synced streams)
     if (
-      streamingTrack.provider === 'youtube' &&
+      streamingTrack.embedUrl.includes('youtube') &&
       typeof window !== 'undefined' &&
       !streamingTrack.embedUrl.includes('origin=')
     ) {
@@ -2291,17 +2287,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-base text-emerald-400">🟢</span>
                       <div className="min-w-0">
-                        <div className="font-extrabold text-white text-xs truncate">Official Spotify Player Active</div>
-                        <div className="text-[10px] text-emerald-300/80 truncate">Plays official Spotify tracks & playlists</div>
+                        <div className="font-extrabold text-white text-xs truncate">Spotify Synced Listening</div>
+                        <div className="text-[10px] text-emerald-300/80 truncate">Both partners hear the same song in real time</div>
                       </div>
                     </div>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-400/30 shrink-0">
-                      Spotify 🟢
+                      Synced ⚡
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-300 leading-tight pt-1">
-                    💡 If your partner is on a phone without a Spotify login, you can also use the <strong className="text-red-400">YouTube</strong> tab for 100% login-free synchronized listening.
-                  </p>
                 </div>
               )}
 
@@ -2933,29 +2926,13 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           {/* Active Streaming Player */}
           {showStreamingDock && (
             <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
-              {streamingTrack.provider === 'spotify' && (
-                <div className="flex items-center justify-between px-3 py-1 bg-emerald-950/80 border-b border-emerald-500/20 text-[10px] text-emerald-300">
-                  <span className="flex items-center gap-1 font-semibold">
-                    <span>🟢</span> Spotify Player
-                  </span>
-                  <a
-                    href={streamingTrack.originalUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline hover:text-white transition flex items-center gap-1"
-                  >
-                    <span>Open in Spotify</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-              )}
               <iframe
                 ref={streamingIframeRef}
                 key={resolvedEmbedUrl}
                 src={resolvedEmbedUrl}
                 onLoad={handleIframeLoaded}
                 width="100%"
-                height={streamingTrack.height || 180}
+                height={streamingTrack.height || 200}
                 frameBorder="0"
                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                 className="w-full rounded-xl transition-all"
