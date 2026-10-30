@@ -496,6 +496,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [isScreenSharing, setIsScreenSharing] = useState(videoCallService.isScreenSharing);
   const [partnerScreenSharing, setPartnerScreenSharing] = useState(videoCallService.partnerScreenSharing);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(videoCallService.screenStream);
+  const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(videoCallService.remoteScreenStream);
   const [screenSharerName, setScreenSharerName] = useState<string>('');
   const [callDuration, setCallDuration] = useState(0);
   const [reactions, setReactions] = useState<{ id: string; emoji: string; x: number; y: number }[]>([]);
@@ -563,6 +564,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       setIsScreenSharing(state.isScreenSharing);
       setPartnerScreenSharing(state.partnerScreenSharing);
       setScreenStream(state.screenStream);
+      setRemoteScreenStream(state.remoteScreenStream || null);
       setScreenSharerName(state.screenSharerName || '');
       if (state.iceConnectionState) setIceState(state.iceConnectionState);
     });
@@ -620,7 +622,6 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
     // Screen sharing sync listener from partner
     const unsubScreenShare = videoCallService.onScreenShare((info) => {
-      setIsScreenSharing(info.isScreenSharing);
       setPartnerScreenSharing(info.isScreenSharing);
       if (info.sharerName) setScreenSharerName(info.sharerName);
       const sender = info.sharerName || partnerName || 'Your Partner';
@@ -807,17 +808,15 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   // Attach screen share stream to dedicated separate screen share video window
   useEffect(() => {
     if (screenShareVideoRef.current) {
-      if (isScreenSharing && screenStream) {
-        screenShareVideoRef.current.srcObject = screenStream;
-        screenShareVideoRef.current.play().catch((err) => console.log('Autoplay local screen stream:', err));
-      } else if (partnerScreenSharing && remoteStream) {
-        screenShareVideoRef.current.srcObject = remoteStream;
-        screenShareVideoRef.current.play().catch((err) => console.log('Autoplay remote screen stream:', err));
+      const activeScreenStream = isScreenSharing ? screenStream : remoteScreenStream;
+      if ((isScreenSharing || partnerScreenSharing) && activeScreenStream) {
+        screenShareVideoRef.current.srcObject = activeScreenStream;
+        screenShareVideoRef.current.play().catch((err) => console.log('Autoplay screen share stream:', err));
       } else {
         screenShareVideoRef.current.srcObject = null;
       }
     }
-  }, [isScreenSharing, screenStream, partnerScreenSharing, remoteStream, showScreenShareDock]);
+  }, [isScreenSharing, screenStream, partnerScreenSharing, remoteScreenStream, showScreenShareDock]);
 
   // Attach remote stream to video and dedicated audio elements
   useEffect(() => {
@@ -2648,22 +2647,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       remoteVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
-                    className={`w-full h-full transition-opacity duration-300 ${
-                      partnerScreenSharing ? 'object-contain bg-black' : 'object-cover'
-                    } ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
+                    className={`w-full h-full transition-opacity duration-300 object-cover ${
+                      remoteStream ? 'opacity-100' : 'opacity-0'
+                    }`}
                   />
                   {remoteStream && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
                   {remoteStream && <FilterOverlayEffect filterId={activeFilter} ecoMode={ecoMode} />}
-
-                  {/* Partner Screen Sharing Banner */}
-                  {partnerScreenSharing && (
-                    <div className="absolute top-3 left-3 z-30 px-3 py-1.5 rounded-full bg-indigo-600/90 text-white text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md border border-indigo-400/50">
-                      <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
-                      <span>{partnerName}'s Shared Screen 🖥️</span>
-                    </div>
-                  )}
 
                   {!remoteStream && (
                     /* Waiting / Ringing Placeholder */
@@ -2768,7 +2759,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   border: `2px solid ${currentFilterConfig.frameGlow}`,
                 }}
               >
-                {/* Main View: Partner (or Partner's shared screen) */}
+                {/* Main View: Partner face camera */}
                 <video
                   ref={remoteVideoRef}
                   autoPlay
@@ -2777,22 +2768,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     remoteVideoRef.current?.play().catch(() => {});
                   }}
                   style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
-                  className={`w-full h-full transition-opacity duration-300 ${
-                    partnerScreenSharing ? 'object-contain bg-black' : 'object-cover'
-                  } ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
+                  className={`w-full h-full transition-opacity duration-300 object-cover ${
+                    remoteStream ? 'opacity-100' : 'opacity-0'
+                  }`}
                 />
                 {remoteStream && (
                   <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                 )}
                 {remoteStream && <FilterOverlayEffect filterId={activeFilter} ecoMode={ecoMode} />}
-
-                {/* Partner Screen Sharing Banner in PiP view */}
-                {partnerScreenSharing && (
-                  <div className="absolute top-4 left-4 z-30 px-3 py-1.5 rounded-full bg-indigo-600/90 text-white text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md border border-indigo-400/50">
-                    <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
-                    <span>{partnerName}'s Shared Screen 🖥️</span>
-                  </div>
-                )}
 
                 {!remoteStream && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-black/50">
@@ -2810,12 +2793,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 )}
 
                 {/* Main View Filter Badge */}
-                {!partnerScreenSharing && (
-                  <div className="absolute top-4 left-4 px-3 py-1 rounded-full text-[11px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/60 text-white">
-                    <span>{currentFilterConfig.icon}</span>
-                    <span>{currentFilterConfig.name}</span>
-                  </div>
-                )}
+                <div className="absolute top-4 left-4 px-3 py-1 rounded-full text-[11px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/60 text-white">
+                  <span>{currentFilterConfig.icon}</span>
+                  <span>{currentFilterConfig.name}</span>
+                </div>
 
                 {/* Floating Self Camera / Screen PiP */}
                 <div
@@ -2974,17 +2955,30 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
           {/* Active Screen Share Video Player */}
           {showScreenShareDock && (
-            <div className="relative rounded-xl overflow-hidden bg-black/90 shadow-inner flex items-center justify-center">
+            <div className="relative rounded-xl overflow-hidden bg-black/90 shadow-inner flex items-center justify-center min-h-[160px] md:min-h-[220px]">
               <video
                 ref={screenShareVideoRef}
                 autoPlay
                 playsInline
                 muted={isScreenSharing}
-                className="w-full max-h-[260px] md:max-h-[380px] object-contain bg-black rounded-xl"
+                className={`w-full max-h-[260px] md:max-h-[380px] object-contain bg-black rounded-xl transition-opacity duration-300 ${
+                  (isScreenSharing && screenStream) || (partnerScreenSharing && remoteScreenStream) ? 'opacity-100' : 'opacity-0'
+                }`}
               />
+              {partnerScreenSharing && !remoteScreenStream && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-slate-950/85 z-10">
+                  <div className="w-9 h-9 border-3 border-indigo-400 border-t-transparent rounded-full animate-spin mb-2" />
+                  <p className="text-xs font-bold text-indigo-300">
+                    Connecting to {screenSharerName || partnerName}'s shared screen...
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Live stream will display here in a moment
+                  </p>
+                </div>
+              )}
               {isScreenSharing && (
-                <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[10px] text-emerald-300 font-semibold border border-white/10 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <div className="absolute bottom-2 left-2 px-2.5 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[10px] text-emerald-300 font-semibold border border-white/10 flex items-center gap-1.5 shadow-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Broadcasting Live</span>
                 </div>
               )}

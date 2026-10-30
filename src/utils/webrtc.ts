@@ -350,6 +350,7 @@ type CallStateListener = (state: {
   isScreenSharing: boolean;
   partnerScreenSharing: boolean;
   screenStream: MediaStream | null;
+  remoteScreenStream?: MediaStream | null;
   screenSharerRole?: UserRole;
   screenSharerName?: string;
 }) => void;
@@ -429,6 +430,8 @@ class RomanticVideoCallService {
   public isScreenSharing: boolean = false;
   public partnerScreenSharing: boolean = false;
   public screenStream: MediaStream | null = null;
+  public remoteScreenStream: MediaStream | null = null;
+  private screenCall: any = null;
   public screenSharerRole?: UserRole;
   public screenSharerName?: string;
 
@@ -462,6 +465,7 @@ class RomanticVideoCallService {
       isScreenSharing: this.isScreenSharing,
       partnerScreenSharing: this.partnerScreenSharing,
       screenStream: this.screenStream,
+      remoteScreenStream: this.remoteScreenStream,
       screenSharerRole: this.screenSharerRole,
       screenSharerName: this.screenSharerName,
     };
@@ -485,6 +489,7 @@ class RomanticVideoCallService {
       isScreenSharing: this.isScreenSharing,
       partnerScreenSharing: this.partnerScreenSharing,
       screenStream: this.screenStream,
+      remoteScreenStream: this.remoteScreenStream,
       screenSharerRole: this.screenSharerRole,
       screenSharerName: this.screenSharerName,
     });
@@ -567,11 +572,64 @@ class RomanticVideoCallService {
           }
         });
 
-        p.on('call', async (incomingCall: any) => {
-          console.log('[WebRTC] Incoming media call from partner:', incomingCall.peer);
+        const handleIncomingPeerCall = async (incomingCall: any) => {
+          if (!incomingCall) return;
+
+          // Check if this incoming call is a secondary call specifically for screen sharing
+          if (incomingCall.metadata && incomingCall.metadata.type === 'screen') {
+            console.log('[WebRTC] Incoming SCREEN share call from partner:', incomingCall.peer);
+            this.screenCall = incomingCall;
+            if (incomingCall.peer) {
+              this.partnerPeerId = incomingCall.peer;
+            }
+            try {
+              incomingCall.answer(undefined);
+            } catch (err) {
+              console.warn('[WebRTC] Screen call answer failed:', err);
+            }
+
+            incomingCall.on('stream', (screenStream: MediaStream) => {
+              console.log('[WebRTC] Incoming screen share stream received:', screenStream.getTracks());
+              this.remoteScreenStream = screenStream;
+              this.partnerScreenSharing = true;
+              this.notify();
+            });
+
+            // Native ontrack listener for instant track reception across mobile and desktop
+            const pc = (incomingCall.peerConnection || incomingCall._peerConnection) as RTCPeerConnection | undefined;
+            if (pc) {
+              pc.addEventListener('track', (event: RTCTrackEvent) => {
+                console.log('[WebRTC PC] Screen call ontrack event received:', event.track.kind);
+                if (event.streams && event.streams[0]) {
+                  this.remoteScreenStream = event.streams[0];
+                  this.partnerScreenSharing = true;
+                  this.notify();
+                }
+              });
+            }
+
+            incomingCall.on('close', () => {
+              console.log('[WebRTC] Partner screen share call closed');
+              this.remoteScreenStream = null;
+              this.partnerScreenSharing = false;
+              this.screenCall = null;
+              this.notify();
+            });
+
+            incomingCall.on('error', (err: any) => {
+              console.warn('[WebRTC] Screen call error:', err);
+            });
+            return;
+          }
+
+          // Primary call (Camera & Mic between partners - NEVER replaced by screen share!)
+          console.log('[WebRTC] Incoming primary media call from partner:', incomingCall.peer);
           clearTimeout(this.answerFallbackTimer);
           this.answerFallbackTimer = null;
           this.activeCall = incomingCall;
+          if (incomingCall.peer) {
+            this.partnerPeerId = incomingCall.peer;
+          }
 
           // Ensure local media is ready before answering
           if (!this.localStream) {
@@ -580,7 +638,9 @@ class RomanticVideoCallService {
 
           incomingCall.answer(this.localStream || undefined);
           this.attachMediaCallListeners(incomingCall);
-        });
+        };
+
+        p.on('call', handleIncomingPeerCall);
 
         p.on('error', (err: any) => {
           console.warn('PeerJS event error:', err.type, err);
@@ -602,14 +662,7 @@ class RomanticVideoCallService {
             p2.on('disconnected', () => {
               try { p2.reconnect(); } catch {}
             });
-            p2.on('call', async (incomingCall: any) => {
-              clearTimeout(this.answerFallbackTimer);
-              this.answerFallbackTimer = null;
-              this.activeCall = incomingCall;
-              if (!this.localStream) await this.getLocalMedia(true, true);
-              incomingCall.answer(this.localStream || undefined);
-              this.attachMediaCallListeners(incomingCall);
-            });
+            p2.on('call', handleIncomingPeerCall);
           } else {
             resolve(this.myPeerId);
           }
@@ -717,6 +770,7 @@ class RomanticVideoCallService {
 
     try {
       console.log('Initiating PeerJS call to partner:', targetPeerId);
+      this.partnerPeerId = targetPeerId;
       const call = this.peer.call(targetPeerId, this.localStream);
       this.activeCall = call;
       this.attachMediaCallListeners(call);
@@ -952,13 +1006,22 @@ class RomanticVideoCallService {
     this.status = 'idle';
     this.partnerTouchingHeart = false;
 
-    if (this.isScreenSharing) {
-      if (this.screenStream) {
-        this.screenStream.getTracks().forEach((t) => t.stop());
-        this.screenStream = null;
-      }
-      this.isScreenSharing = false;
+    if (this.screenCall) {
+      try {
+        this.screenCall.close();
+      } catch {}
+      this.screenCall = null;
     }
+
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop());
+      this.screenStream = null;
+    }
+    if (this.remoteScreenStream) {
+      this.remoteScreenStream.getTracks().forEach((t) => t.stop());
+      this.remoteScreenStream = null;
+    }
+    this.isScreenSharing = false;
     this.partnerScreenSharing = false;
     this.screenSharerRole = undefined;
     this.screenSharerName = undefined;
@@ -1088,13 +1151,29 @@ class RomanticVideoCallService {
 
     // 6. Screen share state sync
     if (data.signalType === 'screen-share-sync') {
-      this.partnerScreenSharing = Boolean(data.isScreenSharing);
+      const isSharing = Boolean(data.isScreenSharing);
+      this.partnerScreenSharing = isSharing;
       this.screenSharerRole = data.sharerRole;
       this.screenSharerName = data.sharerName;
+      if (data.callerPeerId) {
+        this.partnerPeerId = data.callerPeerId;
+      }
+      if (!isSharing) {
+        if (this.screenCall) {
+          try {
+            this.screenCall.close();
+          } catch {}
+          this.screenCall = null;
+        }
+        if (this.remoteScreenStream) {
+          this.remoteScreenStream.getTracks().forEach((t) => t.stop());
+          this.remoteScreenStream = null;
+        }
+      }
       this.notify();
       this.screenShareListeners.forEach((l) =>
         l({
-          isScreenSharing: Boolean(data.isScreenSharing),
+          isScreenSharing: isSharing,
           sharerRole: data.sharerRole,
           sharerName: data.sharerName || senderName,
         })
@@ -1257,24 +1336,36 @@ class RomanticVideoCallService {
         this.stopScreenShare();
       };
 
-      // Replace video sender track on active RTCPeerConnection
-      if (this.activeCall) {
-        const pc = (this.activeCall.peerConnection || this.activeCall._peerConnection) as RTCPeerConnection | undefined;
-        if (pc) {
-          const senders = pc.getSenders();
-          const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
-          if (videoSender) {
-            await videoSender.replaceTrack(screenVideoTrack);
-          }
-          // Mix/forward screen audio if user shared tab/system audio
-          const screenAudioTrack = stream.getAudioTracks()[0];
-          if (screenAudioTrack) {
-            const audioSender = senders.find((s) => s.track && s.track.kind === 'audio');
-            if (audioSender) {
-              await audioSender.replaceTrack(screenAudioTrack);
+      // Close previous screen call if any
+      if (this.screenCall) {
+        try {
+          this.screenCall.close();
+        } catch {}
+        this.screenCall = null;
+      }
+
+      // Establish dedicated secondary call for screen sharing to partner
+      // This leaves activeCall and face camera completely intact so partner still sees your face!
+      const targetPeerId = this.partnerPeerId || (this.activeCall && this.activeCall.peer);
+      if (targetPeerId && this.peer) {
+        console.log('[WebRTC] Initiating dedicated secondary screen call to partner:', targetPeerId);
+        try {
+          const call = this.peer.call(targetPeerId, stream, { metadata: { type: 'screen' } });
+          this.screenCall = call;
+          call.on('close', () => {
+            console.log('[WebRTC] Screen share call closed');
+            if (this.isScreenSharing) {
+              this.stopScreenShare();
             }
-          }
+          });
+          call.on('error', (err: any) => {
+            console.warn('[WebRTC] Screen share call error:', err);
+          });
+        } catch (callErr) {
+          console.warn('[WebRTC] Failed to place screen share call:', callErr);
         }
+      } else {
+        console.warn('[WebRTC] partnerPeerId not available yet for screen sharing');
       }
 
       await this.sendSignal(
@@ -1283,6 +1374,7 @@ class RomanticVideoCallService {
           isScreenSharing: true,
           sharerRole: this.myRole,
           sharerName: this.callerName,
+          callerPeerId: this.myPeerId,
         },
         this.myRole,
         this.callerName
@@ -1299,9 +1391,16 @@ class RomanticVideoCallService {
     }
   }
 
-  // Stop Screen Sharing & restore camera and mic
+  // Stop Screen Sharing
   public async stopScreenShare(): Promise<void> {
-    if (!this.isScreenSharing && !this.screenStream) return;
+    if (!this.isScreenSharing && !this.screenStream && !this.screenCall) return;
+
+    if (this.screenCall) {
+      try {
+        this.screenCall.close();
+      } catch {}
+      this.screenCall = null;
+    }
 
     if (this.screenStream) {
       this.screenStream.getTracks().forEach((track) => track.stop());
@@ -1309,23 +1408,7 @@ class RomanticVideoCallService {
     }
     this.isScreenSharing = false;
 
-    // Restore camera and mic tracks on active RTCPeerConnection
-    if (this.activeCall && this.localStream) {
-      const pc = (this.activeCall.peerConnection || this.activeCall._peerConnection) as RTCPeerConnection | undefined;
-      if (pc) {
-        const senders = pc.getSenders();
-        const cameraTrack = this.localStream.getVideoTracks()[0];
-        const micTrack = this.localStream.getAudioTracks()[0];
-        const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
-        const audioSender = senders.find((s) => s.track && s.track.kind === 'audio');
-        if (videoSender && cameraTrack) {
-          await videoSender.replaceTrack(cameraTrack);
-        }
-        if (audioSender && micTrack) {
-          await audioSender.replaceTrack(micTrack);
-        }
-      }
-    }
+    // Primary camera was untouched, so activeCall remains completely intact and undisturbed!
 
     await this.sendSignal(
       {
