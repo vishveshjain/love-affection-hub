@@ -519,6 +519,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
+  const streamingIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [showSyncListenPrompt, setShowSyncListenPrompt] = useState(false);
 
   // Set user role on mount
   useEffect(() => {
@@ -631,10 +633,18 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           subtitle: info.streamingSubtitle || `${info.streamingProvider || 'Online'} stream`,
           icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
           type: 'track',
-          height: info.streamingProvider === 'spotify' ? 80 : 152,
+          height: info.streamingProvider === 'spotify' ? 80 : 180,
         });
         setMusicPlaying(info.isPlaying ?? true);
         setShowStreamingDock(true);
+        setShowSyncListenPrompt(true);
+        if (streamingIframeRef.current?.contentWindow) {
+          const cmd = (info.isPlaying ?? true) ? 'playVideo' : 'pauseVideo';
+          streamingIframeRef.current.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: cmd, args: '' }),
+            '*'
+          );
+        }
         const sender = info.senderName || partnerName || 'Your Love';
         setSyncToast({
           message: `${sender} started streaming "${info.streamingTitle || 'song'}" on ${info.streamingProvider?.toUpperCase()}! 🎶`,
@@ -646,6 +656,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
       // If partner stopped streaming or switched to soundscapes
       setStreamingTrack(null);
+      setShowSyncListenPrompt(false);
 
       if (info.trackId && info.trackId !== 'none') {
         setActiveMusicTrackId(info.trackId);
@@ -661,6 +672,13 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       }
       if (info.isPlaying !== undefined) {
         setMusicPlaying(info.isPlaying);
+        if (streamingIframeRef.current?.contentWindow) {
+          const cmd = info.isPlaying ? 'playVideo' : 'pauseVideo';
+          streamingIframeRef.current.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: cmd, args: '' }),
+            '*'
+          );
+        }
         if (info.isPlaying) romanticMusic.resume();
         else romanticMusic.pause();
       }
@@ -905,10 +923,32 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     }
   };
 
+  const handleTapToListenTogether = () => {
+    setShowSyncListenPrompt(false);
+    romanticMusic.unlockAudio();
+    if (streamingIframeRef.current?.contentWindow) {
+      streamingIframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+        '*'
+      );
+      streamingIframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+        '*'
+      );
+    }
+  };
+
   const handleToggleMusicPlay = () => {
     if (streamingTrack) {
       const nextPlaying = !musicPlaying;
       setMusicPlaying(nextPlaying);
+      if (streamingIframeRef.current?.contentWindow) {
+        const cmd = nextPlaying ? 'playVideo' : 'pauseVideo';
+        streamingIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: cmd, args: '' }),
+          '*'
+        );
+      }
       videoCallService.syncMusic({
         trackId: 'streaming-track',
         isPlaying: nextPlaying,
@@ -988,6 +1028,12 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const handleVolumeChange = (vol: number) => {
     setMusicVolume(vol);
     romanticMusic.setVolume(vol);
+    if (streamingIframeRef.current?.contentWindow && streamingTrack?.provider === 'youtube') {
+      streamingIframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'setVolume', args: [Math.round(vol * 100)] }),
+        '*'
+      );
+    }
   };
 
   const handlePlayCustomSong = () => {
@@ -1046,6 +1092,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setStreamingTrack(preset);
     setMusicPlaying(true);
     setShowStreamingDock(true);
+    setShowSyncListenPrompt(false);
     videoCallService.syncMusic({
       trackId: 'streaming-track',
       isPlaying: true,
@@ -1079,6 +1126,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setStreamingTrack(parsed);
     setMusicPlaying(true);
     setShowStreamingDock(true);
+    setShowSyncListenPrompt(false);
     videoCallService.syncMusic({
       trackId: 'streaming-track',
       isPlaying: true,
@@ -1102,6 +1150,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const handleStopStreaming = () => {
     setStreamingTrack(null);
     setMusicPlaying(false);
+    setShowSyncListenPrompt(false);
     videoCallService.syncMusic({
       trackId: 'none',
       isPlaying: false,
@@ -2653,14 +2702,39 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             </div>
           </div>
 
+          {/* Synchronized Listening Prompt (Unblocks Browser Audio Policy) */}
+          {showSyncListenPrompt && (
+            <div className="flex items-center justify-between p-3 mb-2.5 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-600 text-white shadow-xl animate-pulse border border-white/30">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-xl shrink-0">🎶</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold leading-tight truncate">
+                    {partnerName} started streaming "{streamingTrack.title}"!
+                  </p>
+                  <p className="text-[10px] text-rose-100 truncate">
+                    Tap to start synchronized listening together 🔊
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleTapToListenTogether}
+                className="px-3.5 py-1.5 rounded-lg bg-white text-rose-600 font-extrabold text-xs shadow-md hover:bg-rose-50 active:scale-95 transition cursor-pointer shrink-0 ml-2"
+              >
+                Listen Together ▶️
+              </button>
+            </div>
+          )}
+
           {/* Iframe Embed */}
           {showStreamingDock && (
             <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
               <iframe
+                ref={streamingIframeRef}
                 key={streamingTrack.embedUrl}
                 src={streamingTrack.embedUrl}
                 width="100%"
-                height={streamingTrack.height || 152}
+                height={streamingTrack.height || 180}
                 frameBorder="0"
                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                 className="w-full rounded-xl transition-all"

@@ -175,11 +175,12 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
 
     if (videoId || playlistId) {
       let embedUrl = '';
+      const originParam = typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
       if (videoId) {
         // Always prioritize the exact song/video ID so YouTube never redirects to an unrelated radio mix or wrong track
-        embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1`;
+        embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1${originParam}`;
       } else {
-        embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${playlistId}&autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1`;
+        embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${playlistId}&autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1${originParam}`;
       }
 
       const title =

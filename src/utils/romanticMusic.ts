@@ -104,12 +104,18 @@ class RomanticMusicService {
   private masterGain: GainNode | null = null;
   private timer: any = null;
   private ringTimer: any = null;
+  private fadeoutTimer: any = null;
+  private fadingGain: GainNode | null = null;
   private activeTrackId: string = 'candlelight-piano';
   private currentVolume: number = 0.22;
   private customAudioEl: HTMLAudioElement | null = null;
   private customAudioTitle: string = '';
   private customAudioUrl: string = '';
   private listeners: Set<TrackChangeListener> = new Set();
+
+  public unlockAudio() {
+    this.initContext();
+  }
 
   private initContext() {
     if (!this.ctx) {
@@ -268,26 +274,44 @@ class RomanticMusicService {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.fadeoutTimer) {
+      clearTimeout(this.fadeoutTimer);
+      this.fadeoutTimer = null;
+    }
+    if (this.fadingGain) {
+      try {
+        this.fadingGain.disconnect();
+      } catch {}
+      this.fadingGain = null;
+    }
     if (this.customAudioEl) {
       try {
         this.customAudioEl.pause();
       } catch {}
     }
     if (this.masterGain && this.ctx) {
+      const oldGain = this.masterGain;
+      this.fadingGain = oldGain;
+      this.masterGain = null; // Detach immediately so new tracks create their own clean masterGain
       try {
-        this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.6);
-        setTimeout(() => {
-          this.masterGain?.disconnect();
-          this.masterGain = null;
+        oldGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.3);
+        this.fadeoutTimer = setTimeout(() => {
+          try {
+            oldGain.disconnect();
+          } catch {}
+          if (this.fadingGain === oldGain) {
+            this.fadingGain = null;
+          }
+          this.fadeoutTimer = null;
           if (this.ctx && this.ctx.state === 'running' && !this.isRunning) {
             this.ctx.suspend().catch(() => {});
           }
-        }, 700);
+        }, 350);
       } catch {
-        this.masterGain = null;
-        if (this.ctx && this.ctx.state === 'running' && !this.isRunning) {
-          this.ctx.suspend().catch(() => {});
-        }
+        try {
+          oldGain.disconnect();
+        } catch {}
+        this.fadingGain = null;
       }
     } else {
       if (this.ctx && this.ctx.state === 'running' && !this.isRunning) {
@@ -298,14 +322,26 @@ class RomanticMusicService {
 
   // Start synthesizing active romantic track
   private startActiveTrack() {
+    // Clear any pending old fadeout so it never cancels or suspends the new track
+    if (this.fadeoutTimer) {
+      clearTimeout(this.fadeoutTimer);
+      this.fadeoutTimer = null;
+    }
+    if (this.fadingGain) {
+      try {
+        this.fadingGain.disconnect();
+      } catch {}
+      this.fadingGain = null;
+    }
+
     this.initContext();
     if (!this.ctx) return;
 
     this.isRunning = true;
     this.masterGain = this.ctx.createGain();
     const scaledGain = this.currentVolume * 0.45;
-    this.masterGain.gain.setValueAtTime(0, this.ctx.currentTime);
-    this.masterGain.gain.linearRampToValueAtTime(scaledGain, this.ctx.currentTime + 2.0);
+    this.masterGain.gain.setValueAtTime(scaledGain * 0.5, this.ctx.currentTime);
+    this.masterGain.gain.linearRampToValueAtTime(scaledGain, this.ctx.currentTime + 1.2);
     this.masterGain.connect(this.ctx.destination);
 
     switch (this.activeTrackId) {
