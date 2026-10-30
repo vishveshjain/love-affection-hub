@@ -15,6 +15,7 @@ export interface StreamingTrackInfo {
   icon: string;
   type: 'track' | 'playlist' | 'album' | 'video';
   height?: number;
+  spotifyUri?: string;
 }
 
 export interface LinkedAccount {
@@ -71,6 +72,22 @@ function extractUrl(rawText: string): string {
 }
 
 /**
+ * Extract canonical Spotify URI from any standard or internationalized Spotify URL or URI
+ */
+export function extractSpotifyUri(url: string): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('spotify:')) return trimmed;
+  const match = trimmed.match(
+    /spotify\.com\/(?:intl-[a-zA-Z-]+\/)?(?:embed\/)?(track|playlist|album|artist|episode)\/([a-zA-Z0-9]+)/i
+  );
+  if (match) {
+    return `spotify:${match[1].toLowerCase()}:${match[2]}`;
+  }
+  return undefined;
+}
+
+/**
  * Parse any user-provided URL and convert it into a secure embed player.
  * Bulletproof regexes handle internationalized URLs (/intl-en/, /intl-es/), mobile share links,
  * YouTube shorts, YouTube music, playlists, and albums.
@@ -100,6 +117,7 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
     }
 
     if (id) {
+      const spotifyUri = `spotify:${type}:${id}`;
       const embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
       const title =
         customTitle ||
@@ -112,6 +130,7 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
         provider: 'spotify',
         embedUrl,
         originalUrl: url,
+        spotifyUri,
         title,
         subtitle: `Spotify ${type.charAt(0).toUpperCase() + type.slice(1)}`,
         icon: '🟢',
@@ -230,6 +249,7 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX50oq6vV7x2S',
     embedUrl: 'https://open.spotify.com/embed/playlist/37i9dQZF1DX50oq6vV7x2S?utm_source=generator&theme=0',
+    spotifyUri: 'spotify:playlist:37i9dQZF1DX50oq6vV7x2S',
     title: 'Love Ballads & Romance',
     subtitle: 'Spotify Official • All-time romantic classics & slow dance',
     icon: '🟢',
@@ -240,6 +260,7 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX2pSTOxoPbx9',
     embedUrl: 'https://open.spotify.com/embed/playlist/37i9dQZF1DX2pSTOxoPbx9?utm_source=generator&theme=0',
+    spotifyUri: 'spotify:playlist:37i9dQZF1DX2pSTOxoPbx9',
     title: 'Cozy Acoustic Love',
     subtitle: 'Spotify Official • Warm guitar fingerpicking & soft vocals',
     icon: '🟢',
@@ -250,6 +271,7 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX4t95PaoR1zy',
     embedUrl: 'https://open.spotify.com/embed/playlist/37i9dQZF1DX4t95PaoR1zy?utm_source=generator&theme=0',
+    spotifyUri: 'spotify:playlist:37i9dQZF1DX4t95PaoR1zy',
     title: 'Midnight Lo-Fi Romance',
     subtitle: 'Spotify Official • Gentle study & chill beats for two',
     icon: '🟢',
@@ -260,6 +282,7 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/track/0tgVpDi06FyKpA1z0VMD4v',
     embedUrl: 'https://open.spotify.com/embed/track/0tgVpDi06FyKpA1z0VMD4v?utm_source=generator&theme=0',
+    spotifyUri: 'spotify:track:0tgVpDi06FyKpA1z0VMD4v',
     title: 'Perfect — Ed Sheeran',
     subtitle: 'Spotify Single • Iconic timeless love ballad',
     icon: '🟢',

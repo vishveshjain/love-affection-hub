@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 import {
   parseStreamingUrl,
+  extractSpotifyUri,
   ROMANTIC_STREAMING_PRESETS,
   StreamingTrackInfo,
   StreamingProvider,
@@ -520,6 +521,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamingIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const spotifyEmbedContainerRef = useRef<HTMLDivElement | null>(null);
+  const spotifyEmbedControllerRef = useRef<any>(null);
+  const isRemoteUpdatingSpotify = useRef(false);
+  const [spotifyIFrameApiReady, setSpotifyIFrameApiReady] = useState(false);
   const hasUnlockedAudio = useRef(false);
   const streamingStartedAt = useRef<number>(Date.now());
   const [showSyncListenPrompt, setShowSyncListenPrompt] = useState(false);
@@ -528,6 +533,114 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   useEffect(() => {
     videoCallService.setMyRole(profile.currentUserRole);
   }, [profile.currentUserRole]);
+
+  // Load Spotify IFrame API script
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if ((window as any).SpotifyIframeApi) {
+      setSpotifyIFrameApiReady(true);
+      return;
+    }
+
+    (window as any).onSpotifyIframeApiReady = (IFrameAPI: any) => {
+      (window as any).SpotifyIframeApi = IFrameAPI;
+      setSpotifyIFrameApiReady(true);
+    };
+
+    if (!document.getElementById('spotify-iframe-api-script')) {
+      const script = document.createElement('script');
+      script.id = 'spotify-iframe-api-script';
+      script.src = 'https://open.spotify.com/embed/iframe-api/v1';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  // Initialize and synchronize Spotify Embed Controller
+  useEffect(() => {
+    if (!spotifyIFrameApiReady || streamingTrack?.provider !== 'spotify') return;
+    const IFrameAPI = (window as any).SpotifyIframeApi;
+    if (!IFrameAPI || !spotifyEmbedContainerRef.current) return;
+
+    const uri =
+      streamingTrack.spotifyUri ||
+      extractSpotifyUri(streamingTrack.originalUrl) ||
+      'spotify:track:0tgVpDi06FyKpA1z0VMD4v';
+
+    if (!spotifyEmbedControllerRef.current) {
+      try {
+        IFrameAPI.createController(
+          spotifyEmbedContainerRef.current,
+          {
+            width: '100%',
+            height: streamingTrack.height || 152,
+            uri,
+          },
+          (controller: any) => {
+            spotifyEmbedControllerRef.current = controller;
+
+            controller.addListener('ready', () => {
+              if (musicPlaying) {
+                controller.play();
+                const elapsed = Math.max(0, Math.floor((Date.now() - streamingStartedAt.current) / 1000));
+                if (elapsed > 1) {
+                  controller.seek(elapsed);
+                }
+              }
+            });
+
+            controller.addListener('playback_update', (e: any) => {
+              if (!e?.data || isRemoteUpdatingSpotify.current) return;
+              const { isPaused, position } = e.data;
+              if (isPaused === undefined) return;
+
+              // If partner changed play/pause inside the Spotify widget
+              if (isPaused === musicPlaying) {
+                const nextPlaying = !isPaused;
+                const now = Date.now();
+                const calcStartedAt = now - (position || 0);
+                setMusicPlaying(nextPlaying);
+                streamingStartedAt.current = calcStartedAt;
+
+                videoCallService.syncMusic({
+                  trackId: 'streaming-track',
+                  isPlaying: nextPlaying,
+                  streamingProvider: 'spotify',
+                  streamingEmbedUrl: streamingTrack.embedUrl,
+                  streamingOriginalUrl: streamingTrack.originalUrl,
+                  streamingTitle: streamingTrack.title,
+                  streamingSubtitle: streamingTrack.subtitle,
+                  spotifyUri: uri,
+                  startedAt: calcStartedAt,
+                  senderRole: profile.currentUserRole,
+                  senderName: currentUserName,
+                });
+              }
+            });
+          }
+        );
+      } catch (err) {
+        console.warn('Spotify controller init failed:', err);
+      }
+    } else {
+      try {
+        if (streamingTrack.spotifyUri) {
+          spotifyEmbedControllerRef.current.loadUri(streamingTrack.spotifyUri);
+        }
+        if (musicPlaying) {
+          spotifyEmbedControllerRef.current.play();
+          const elapsed = Math.max(0, Math.floor((Date.now() - streamingStartedAt.current) / 1000));
+          if (elapsed > 1) {
+            spotifyEmbedControllerRef.current.seek(elapsed);
+          }
+        } else {
+          spotifyEmbedControllerRef.current.pause();
+        }
+      } catch (err) {
+        console.warn('Spotify loadUri/play failed:', err);
+      }
+    }
+  }, [spotifyIFrameApiReady, streamingTrack?.originalUrl, streamingTrack?.spotifyUri]);
 
   // Subscribe to call state changes, screen sharing, music, and bidirectional theme-sync
   useEffect(() => {
@@ -630,57 +743,99 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         if (info.startedAt) {
           streamingStartedAt.current = info.startedAt;
         }
+
+        const incomingSpotifyUri =
+          info.spotifyUri ||
+          (info.streamingProvider === 'spotify'
+            ? extractSpotifyUri(info.streamingOriginalUrl || info.streamingEmbedUrl)
+            : undefined);
+
         setStreamingTrack({
           provider: (info.streamingProvider as StreamingProvider) || 'spotify',
           embedUrl: info.streamingEmbedUrl,
           originalUrl: info.streamingOriginalUrl || info.streamingEmbedUrl,
+          spotifyUri: incomingSpotifyUri,
           title: info.streamingTitle || 'Online Stream',
           subtitle: info.streamingSubtitle || `${info.streamingProvider || 'Online'} stream`,
           icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
           type: 'track',
-          height: info.streamingProvider === 'spotify' ? 80 : 180,
+          height: info.streamingProvider === 'spotify' ? 152 : 180,
         });
         setMusicPlaying(info.isPlaying ?? true);
         setShowStreamingDock(true);
 
-        const sendIframeCommands = () => {
-          if (streamingIframeRef.current?.contentWindow) {
-            if (info.isPlaying === false) {
-              streamingIframeRef.current.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
-                '*'
-              );
-              return;
-            }
-            streamingIframeRef.current.contentWindow.postMessage(
-              JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
-              '*'
-            );
-            streamingIframeRef.current.contentWindow.postMessage(
-              JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
-              '*'
-            );
-            if (info.startedAt) {
-              const elapsed = Math.max(0, Math.floor((Date.now() - info.startedAt) / 1000));
-              if (elapsed > 1) {
-                streamingIframeRef.current.contentWindow.postMessage(
-                  JSON.stringify({ event: 'command', func: 'seekTo', args: [elapsed, true] }),
-                  '*'
-                );
+        if (info.streamingProvider === 'spotify') {
+          isRemoteUpdatingSpotify.current = true;
+          const applySpotifyCommands = () => {
+            if (spotifyEmbedControllerRef.current) {
+              if (incomingSpotifyUri) {
+                spotifyEmbedControllerRef.current.loadUri(incomingSpotifyUri);
+              }
+              if (info.isPlaying === false) {
+                spotifyEmbedControllerRef.current.pause();
+              } else {
+                spotifyEmbedControllerRef.current.play();
+                if (info.startedAt) {
+                  const elapsed = Math.max(0, Math.floor((Date.now() - info.startedAt) / 1000));
+                  if (elapsed > 1) {
+                    spotifyEmbedControllerRef.current.seek(elapsed);
+                  }
+                }
               }
             }
-          }
-        };
+          };
 
-        // If audio has already been unlocked on this device, immediately start playing & unmute
-        if (hasUnlockedAudio.current) {
-          setShowSyncListenPrompt(false);
-          // Send commands at multiple intervals to catch player readiness
-          setTimeout(sendIframeCommands, 400);
-          setTimeout(sendIframeCommands, 1200);
+          applySpotifyCommands();
+          setTimeout(applySpotifyCommands, 500);
+          setTimeout(() => {
+            isRemoteUpdatingSpotify.current = false;
+          }, 1200);
+
+          if (hasUnlockedAudio.current) {
+            setShowSyncListenPrompt(false);
+          } else {
+            setShowSyncListenPrompt(true);
+          }
         } else {
-          // If first time receiving streaming music on this device, prompt once to unlock audio
-          setShowSyncListenPrompt(true);
+          const sendIframeCommands = () => {
+            if (streamingIframeRef.current?.contentWindow) {
+              if (info.isPlaying === false) {
+                streamingIframeRef.current.contentWindow.postMessage(
+                  JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+                  '*'
+                );
+                return;
+              }
+              streamingIframeRef.current.contentWindow.postMessage(
+                JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+                '*'
+              );
+              streamingIframeRef.current.contentWindow.postMessage(
+                JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+                '*'
+              );
+              if (info.startedAt) {
+                const elapsed = Math.max(0, Math.floor((Date.now() - info.startedAt) / 1000));
+                if (elapsed > 1) {
+                  streamingIframeRef.current.contentWindow.postMessage(
+                    JSON.stringify({ event: 'command', func: 'seekTo', args: [elapsed, true] }),
+                    '*'
+                  );
+                }
+              }
+            }
+          };
+
+          // If audio has already been unlocked on this device, immediately start playing & unmute
+          if (hasUnlockedAudio.current) {
+            setShowSyncListenPrompt(false);
+            // Send commands at multiple intervals to catch player readiness
+            setTimeout(sendIframeCommands, 400);
+            setTimeout(sendIframeCommands, 1200);
+          } else {
+            // If first time receiving streaming music on this device, prompt once to unlock audio
+            setShowSyncListenPrompt(true);
+          }
         }
 
         const sender = info.senderName || partnerName || 'Your Love';
@@ -965,7 +1120,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     hasUnlockedAudio.current = true;
     setShowSyncListenPrompt(false);
     romanticMusic.unlockAudio();
-    if (streamingIframeRef.current?.contentWindow) {
+
+    if (streamingTrack?.provider === 'spotify') {
+      spotifyEmbedControllerRef.current?.play();
+      const elapsed = Math.max(0, Math.floor((Date.now() - streamingStartedAt.current) / 1000));
+      if (elapsed > 1) {
+        spotifyEmbedControllerRef.current?.seek(elapsed);
+      }
+    } else if (streamingIframeRef.current?.contentWindow) {
       streamingIframeRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
         '*'
@@ -1008,13 +1170,21 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     if (streamingTrack) {
       const nextPlaying = !musicPlaying;
       setMusicPlaying(nextPlaying);
-      if (streamingIframeRef.current?.contentWindow) {
+
+      if (streamingTrack.provider === 'spotify') {
+        if (nextPlaying) {
+          spotifyEmbedControllerRef.current?.play();
+        } else {
+          spotifyEmbedControllerRef.current?.pause();
+        }
+      } else if (streamingIframeRef.current?.contentWindow) {
         const cmd = nextPlaying ? 'playVideo' : 'pauseVideo';
         streamingIframeRef.current.contentWindow.postMessage(
           JSON.stringify({ event: 'command', func: cmd, args: '' }),
           '*'
         );
       }
+
       videoCallService.syncMusic({
         trackId: 'streaming-track',
         isPlaying: nextPlaying,
@@ -1023,6 +1193,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         streamingOriginalUrl: streamingTrack.originalUrl,
         streamingTitle: streamingTrack.title,
         streamingSubtitle: streamingTrack.subtitle,
+        spotifyUri: streamingTrack.spotifyUri,
         startedAt: streamingStartedAt.current,
         senderRole: profile.currentUserRole,
         senderName: currentUserName,
@@ -1181,6 +1352,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setMusicPlaying(true);
     setShowStreamingDock(true);
     setShowSyncListenPrompt(false);
+
+    if (preset.provider === 'spotify') {
+      if (spotifyEmbedControllerRef.current && preset.spotifyUri) {
+        spotifyEmbedControllerRef.current.loadUri(preset.spotifyUri);
+        spotifyEmbedControllerRef.current.play();
+      }
+    }
+
     videoCallService.syncMusic({
       trackId: 'streaming-track',
       isPlaying: true,
@@ -1189,6 +1368,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       streamingOriginalUrl: preset.originalUrl,
       streamingTitle: preset.title,
       streamingSubtitle: preset.subtitle,
+      spotifyUri: preset.spotifyUri,
       startedAt: now,
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
@@ -1202,7 +1382,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const handlePlayStreamingUrl = () => {
     if (!streamingInputUrl.trim()) return;
-    const parsed = parseStreamingUrl(streamingInputUrl.trim(), streamingInputTitle.trim());
+    const rawUrl = streamingInputUrl.trim();
+    const parsed = parseStreamingUrl(rawUrl, streamingInputTitle.trim());
     if (!parsed) {
       setSyncToast({
         message: 'Could not recognize streaming link. Try a Spotify, Apple Music, or YouTube link!',
@@ -1219,6 +1400,40 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setMusicPlaying(true);
     setShowStreamingDock(true);
     setShowSyncListenPrompt(false);
+
+    if (parsed.provider === 'spotify') {
+      if (spotifyEmbedControllerRef.current && parsed.spotifyUri) {
+        spotifyEmbedControllerRef.current.loadUri(parsed.spotifyUri);
+        spotifyEmbedControllerRef.current.play();
+      }
+
+      // Fetch accurate metadata via Spotify oEmbed if no custom title was typed
+      if (!streamingInputTitle.trim()) {
+        fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(parsed.originalUrl)}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.title) {
+              const fullTitle = data.author_name ? `${data.title} — ${data.author_name}` : data.title;
+              setStreamingTrack((prev) => (prev ? { ...prev, title: fullTitle } : prev));
+              videoCallService.syncMusic({
+                trackId: 'streaming-track',
+                isPlaying: true,
+                streamingProvider: 'spotify',
+                streamingEmbedUrl: parsed!.embedUrl,
+                streamingOriginalUrl: parsed!.originalUrl,
+                streamingTitle: fullTitle,
+                streamingSubtitle: parsed!.subtitle,
+                spotifyUri: parsed!.spotifyUri,
+                startedAt: now,
+                senderRole: profile.currentUserRole,
+                senderName: currentUserName,
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
     videoCallService.syncMusic({
       trackId: 'streaming-track',
       isPlaying: true,
@@ -1227,6 +1442,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       streamingOriginalUrl: parsed.originalUrl,
       streamingTitle: parsed.title,
       streamingSubtitle: parsed.subtitle,
+      spotifyUri: parsed.spotifyUri,
       startedAt: now,
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
@@ -1241,6 +1457,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleStopStreaming = () => {
+    if (streamingTrack?.provider === 'spotify') {
+      spotifyEmbedControllerRef.current?.pause();
+    }
     setStreamingTrack(null);
     setMusicPlaying(false);
     setShowSyncListenPrompt(false);
@@ -2207,42 +2426,19 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 )}
               </div>
 
-              {/* Spotify Synced Listening Info / Tab Audio Option */}
+              {/* Spotify Real-Time Sync Status */}
               {streamingProviderTab === 'spotify' && (
-                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs text-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-emerald-300 flex items-center gap-1.5">
-                      <span>🟢</span>
-                      <span>Spotify Listen Together</span>
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
-                      DRM Protected
-                    </span>
+                <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs text-slate-200 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base text-emerald-400">🟢</span>
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-white text-xs truncate">Spotify Real-Time Sync Active</div>
+                      <div className="text-[10px] text-emerald-300/80 truncate">Both partners stay synchronized in lockstep</div>
+                    </div>
                   </div>
-                  <p className="text-[11px] leading-relaxed text-slate-300">
-                    Spotify requires both partners to tap Play inside the widget (or be logged in) due to Spotify's privacy policies. For 100% automated listening together with zero delays:
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setShowMusicModal(false);
-                        if (!isScreenSharing) {
-                          await videoCallService.startScreenShare();
-                        }
-                      }}
-                      className="flex-1 min-w-[170px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition cursor-pointer active:scale-95"
-                    >
-                      <span>🎧 Broadcast Spotify Tab Audio</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStreamingProviderTab('youtube')}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/10 transition cursor-pointer"
-                    >
-                      <span>▶️ Synced YouTube Music</span>
-                    </button>
-                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-400/30 shrink-0">
+                    Synced ⚡
+                  </span>
                 </div>
               )}
 
@@ -2871,37 +3067,29 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             </div>
           )}
 
-          {/* Spotify Direct Audio Notice */}
-          {streamingTrack.provider === 'spotify' && (
-            <div className="flex items-center justify-between p-2 mb-2 rounded-xl bg-emerald-950/50 border border-emerald-500/30 text-[11px] text-slate-200">
-              <span className="text-emerald-300 truncate">💡 Tap ▶️ inside Spotify, or broadcast tab audio</span>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!isScreenSharing) await videoCallService.startScreenShare();
-                }}
-                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition shadow-sm cursor-pointer shrink-0 ml-2"
-              >
-                Broadcast Tab 🎧
-              </button>
-            </div>
-          )}
-
-          {/* Iframe Embed */}
+          {/* Active Streaming Player */}
           {showStreamingDock && (
             <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
-              <iframe
-                ref={streamingIframeRef}
-                key={resolvedEmbedUrl}
-                src={resolvedEmbedUrl}
-                onLoad={handleIframeLoaded}
-                width="100%"
-                height={streamingTrack.height || 180}
-                frameBorder="0"
-                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                className="w-full rounded-xl transition-all"
-                title={streamingTrack.title}
-              />
+              {/* Spotify Player (Controlled via Spotify IFrame API in real-time) */}
+              <div className={streamingTrack.provider === 'spotify' ? 'block' : 'hidden'}>
+                <div ref={spotifyEmbedContainerRef} id="spotify-embed-slot" className="w-full" />
+              </div>
+
+              {/* YouTube / Other Online Player */}
+              {streamingTrack.provider !== 'spotify' && (
+                <iframe
+                  ref={streamingIframeRef}
+                  key={resolvedEmbedUrl}
+                  src={resolvedEmbedUrl}
+                  onLoad={handleIframeLoaded}
+                  width="100%"
+                  height={streamingTrack.height || 180}
+                  frameBorder="0"
+                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                  className="w-full rounded-xl transition-all"
+                  title={streamingTrack.title}
+                />
+              )}
             </div>
           )}
         </div>
