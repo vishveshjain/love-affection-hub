@@ -49,6 +49,7 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Maximize2,
   Link2,
   CheckCircle2,
   Trash2,
@@ -491,6 +492,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [accountInputId, setAccountInputId] = useState('');
   const [isLinkingAccount, setIsLinkingAccount] = useState(false);
   const [showStreamingDock, setShowStreamingDock] = useState(true);
+  const [showScreenShareDock, setShowScreenShareDock] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(videoCallService.isScreenSharing);
   const [partnerScreenSharing, setPartnerScreenSharing] = useState(videoCallService.partnerScreenSharing);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(videoCallService.screenStream);
@@ -520,6 +522,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenShareVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamingIframeRef = useRef<HTMLIFrameElement | null>(null);
   const hasUnlockedAudio = useRef(false);
   const streamingStartedAt = useRef<number>(Date.now());
@@ -630,6 +633,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       setTimeout(() => setSyncToast(null), 4000);
       soundFx.playPop(info.isScreenSharing ? 720 : 480, 0.08);
       if (info.isScreenSharing) {
+        setShowScreenShareDock(true);
         confetti({
           particleCount: 25,
           spread: 50,
@@ -780,26 +784,40 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     };
   }, [partnerName]);
 
-  // Attach local media stream or screen stream to video tags
+  // Attach local camera stream to video tags (always user's face, never replaced by screen share)
   useEffect(() => {
-    const streamToUse = isScreenSharing && screenStream ? screenStream : localStream;
     if (localVideoRef.current) {
-      if (streamToUse && (!isVideoOff || isScreenSharing)) {
-        localVideoRef.current.srcObject = streamToUse;
+      if (localStream && !isVideoOff) {
+        localVideoRef.current.srcObject = localStream;
         localVideoRef.current.play().catch((err) => console.log('Autoplay local stream:', err));
       } else {
         localVideoRef.current.srcObject = null;
       }
     }
     if (pipVideoRef.current) {
-      if (streamToUse && (!isVideoOff || isScreenSharing)) {
-        pipVideoRef.current.srcObject = streamToUse;
+      if (localStream && !isVideoOff) {
+        pipVideoRef.current.srcObject = localStream;
         pipVideoRef.current.play().catch((err) => console.log('Autoplay pip stream:', err));
       } else {
         pipVideoRef.current.srcObject = null;
       }
     }
-  }, [localStream, screenStream, isScreenSharing, isVideoOff, callStatus, viewMode]);
+  }, [localStream, isVideoOff, callStatus, viewMode]);
+
+  // Attach screen share stream to dedicated separate screen share video window
+  useEffect(() => {
+    if (screenShareVideoRef.current) {
+      if (isScreenSharing && screenStream) {
+        screenShareVideoRef.current.srcObject = screenStream;
+        screenShareVideoRef.current.play().catch((err) => console.log('Autoplay local screen stream:', err));
+      } else if (partnerScreenSharing && remoteStream) {
+        screenShareVideoRef.current.srcObject = remoteStream;
+        screenShareVideoRef.current.play().catch((err) => console.log('Autoplay remote screen stream:', err));
+      } else {
+        screenShareVideoRef.current.srcObject = null;
+      }
+    }
+  }, [isScreenSharing, screenStream, partnerScreenSharing, remoteStream, showScreenShareDock]);
 
   // Attach remote stream to video and dedicated audio elements
   useEffect(() => {
@@ -954,6 +972,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       } else {
         const ok = await videoCallService.startScreenShare();
         if (ok) {
+          setShowScreenShareDock(true);
           soundFx.playPop(750, 0.08);
           confetti({
             particleCount: 20,
@@ -2695,9 +2714,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       localVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
-                    className={`w-full h-full transition-opacity duration-300 ${
-                      isScreenSharing ? 'object-contain bg-black' : 'object-cover -scale-x-100'
-                    } ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
+                    className={`w-full h-full transition-opacity duration-300 object-cover -scale-x-100 ${
+                      localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'
+                    }`}
                   />
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
@@ -2815,9 +2834,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       pipVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
-                    className={`w-full h-full transition-opacity duration-300 ${
-                      isScreenSharing ? 'object-contain bg-black' : 'object-cover -scale-x-100'
-                    } ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
+                    className={`w-full h-full transition-opacity duration-300 object-cover -scale-x-100 ${
+                      localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'
+                    }`}
                   />
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
@@ -2846,6 +2865,133 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           </div>
         )}
       </div>
+
+      {/* ================= SEPARATE SCREEN SHARE WINDOW (DEDICATED DOCK) ================= */}
+      {(isScreenSharing || partnerScreenSharing) && (
+        <div
+          className={`relative z-25 mx-3 md:mx-6 mb-2 rounded-2xl bg-black/90 backdrop-blur-xl border shadow-2xl overflow-hidden transition-all duration-300 ${
+            showScreenShareDock ? 'p-3' : 'px-3 py-1.5'
+          }`}
+          style={{
+            borderColor: 'rgba(99, 102, 241, 0.7)',
+            boxShadow: '0 0 25px rgba(99, 102, 241, 0.35)',
+          }}
+        >
+          {/* Header Bar */}
+          <div className="flex items-center justify-between gap-2 mb-2 text-white text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base">🖥️</span>
+              <div className="min-w-0">
+                <div className="font-extrabold truncate flex items-center gap-1.5">
+                  <span className="truncate">
+                    {isScreenSharing ? 'Your Shared Screen' : `${screenSharerName || partnerName}'s Shared Screen`}
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/25 text-indigo-300 text-[9px] font-bold border border-indigo-400/40 shrink-0 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
+                    Live Screen ⚡
+                  </span>
+                </div>
+                {showScreenShareDock && (
+                  <p className="text-[10px] text-slate-300 truncate">
+                    {isScreenSharing
+                      ? 'Broadcasting in separate window • Your camera remains active'
+                      : `${partnerName} is broadcasting their screen in real time`}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Picture-in-Picture / Pop-out button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (screenShareVideoRef.current) {
+                    if (document.pictureInPictureElement) {
+                      document.exitPictureInPicture().catch(() => {});
+                    } else {
+                      screenShareVideoRef.current.requestPictureInPicture?.().catch(() => {});
+                    }
+                  }
+                }}
+                title="Pop out into floating window (Picture-in-Picture)"
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Fullscreen Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (screenShareVideoRef.current) {
+                    if (document.fullscreenElement) {
+                      document.exitFullscreen?.().catch(() => {});
+                    } else {
+                      screenShareVideoRef.current.requestFullscreen?.().catch(() => {});
+                    }
+                  }
+                }}
+                title="Fullscreen screen share"
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Minimize/Maximize Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowScreenShareDock((d) => !d)}
+                title={showScreenShareDock ? 'Minimize screen share' : 'Expand screen share'}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                {showScreenShareDock ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* Stop / Close */}
+              {isScreenSharing ? (
+                <button
+                  type="button"
+                  onClick={handleToggleScreenShare}
+                  title="Stop sharing screen"
+                  className="px-2.5 py-1 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                >
+                  <ScreenShareOff className="w-3.5 h-3.5" />
+                  <span>Stop</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowScreenShareDock(false)}
+                  title="Close screen share view"
+                  className="p-1.5 rounded-lg bg-rose-600/70 hover:bg-rose-600 text-white transition cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Active Screen Share Video Player */}
+          {showScreenShareDock && (
+            <div className="relative rounded-xl overflow-hidden bg-black/90 shadow-inner flex items-center justify-center">
+              <video
+                ref={screenShareVideoRef}
+                autoPlay
+                playsInline
+                muted={isScreenSharing}
+                className="w-full max-h-[260px] md:max-h-[380px] object-contain bg-black rounded-xl"
+              />
+              {isScreenSharing && (
+                <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[10px] text-emerald-300 font-semibold border border-white/10 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Broadcasting Live</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ================= ONLINE STREAMING EMBED PLAYER (SPOTIFY / APPLE MUSIC / YOUTUBE) ================= */}
       {streamingTrack && (
