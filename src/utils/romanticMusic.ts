@@ -279,9 +279,19 @@ class RomanticMusicService {
         setTimeout(() => {
           this.masterGain?.disconnect();
           this.masterGain = null;
+          if (this.ctx && this.ctx.state === 'running' && !this.isRunning) {
+            this.ctx.suspend().catch(() => {});
+          }
         }, 700);
       } catch {
         this.masterGain = null;
+        if (this.ctx && this.ctx.state === 'running' && !this.isRunning) {
+          this.ctx.suspend().catch(() => {});
+        }
+      }
+    } else {
+      if (this.ctx && this.ctx.state === 'running' && !this.isRunning) {
+        this.ctx.suspend().catch(() => {});
       }
     }
   }

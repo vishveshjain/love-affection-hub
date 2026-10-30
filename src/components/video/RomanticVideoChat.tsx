@@ -82,533 +82,385 @@ interface RomanticVideoChatProps {
 }
 
 // ================= ATMOSPHERIC BACKGROUND COMPONENT =================
-const AtmosphericBackground: React.FC<{ themeId: RomanticThemeId }> = ({ themeId }) => {
-  switch (themeId) {
-    case 'moonlight':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-          {/* Nebula Clouds */}
-          <div className="absolute top-1/4 -left-1/4 w-[150%] h-[150%] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-500/10 via-purple-900/5 to-transparent blur-3xl opacity-60 animate-bokeh-drift" style={{ animationDuration: '30s' }} />
-          <div className="absolute -bottom-1/4 -right-1/4 w-[120%] h-[120%] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-400/10 via-indigo-800/5 to-transparent blur-3xl opacity-50 animate-bokeh-drift" style={{ animationDuration: '40s', animationDirection: 'reverse' }} />
+// Memoized & Eco-Optimized: Never recalculates random values on timer ticks.
+// In Eco Mode (phones/tablets), eliminates GPU-heavy blur-3xl layers and 60fps repaints to keep phone completely cool.
+const STATIC_STARS = [
+  { top: '12%', left: '15%', size: 2, delay: '0.2s', dur: '3.2s' },
+  { top: '22%', left: '82%', size: 3, delay: '1.5s', dur: '4.1s' },
+  { top: '38%', left: '45%', size: 2, delay: '0.8s', dur: '3.6s' },
+  { top: '48%', left: '18%', size: 1.5, delay: '2.1s', dur: '4.5s' },
+  { top: '15%', left: '60%', size: 2.5, delay: '1.1s', dur: '3.9s' },
+  { top: '65%', left: '75%', size: 2, delay: '0.5s', dur: '3.4s' },
+  { top: '80%', left: '30%', size: 3, delay: '1.9s', dur: '4.8s' },
+  { top: '70%', left: '12%', size: 1.5, delay: '2.7s', dur: '3.7s' },
+  { top: '28%', left: '92%', size: 2, delay: '0.9s', dur: '4.2s' },
+  { top: '85%', left: '88%', size: 2.5, delay: '1.3s', dur: '3.5s' },
+  { top: '8%', left: '38%', size: 2, delay: '2.4s', dur: '4.0s' },
+  { top: '55%', left: '52%', size: 1.5, delay: '1.7s', dur: '3.8s' },
+];
 
-          {/* Luminous Crescent Moon with Silver Corona and Rays */}
-          <div className="absolute top-6 right-8 md:top-10 md:right-16 w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-tr from-slate-100 via-sky-100 to-indigo-200 shadow-[0_0_80px_rgba(186,230,253,0.6)] flex items-center justify-center opacity-95">
-            <div className="w-5 h-5 rounded-full bg-slate-300/40 absolute top-4 left-6" />
-            <div className="w-8 h-8 rounded-full bg-slate-300/30 absolute bottom-5 right-7" />
-            <div className="w-3 h-3 rounded-full bg-slate-300/30 absolute top-12 left-12" />
-            <div className="absolute inset-0 rounded-full shadow-[0_0_120px_rgba(255,255,255,0.4)] animate-flicker-glow" style={{ animationDuration: '8s' }} />
+const AtmosphericBackground = React.memo<{ themeId: RomanticThemeId; ecoMode?: boolean }>(
+  ({ themeId, ecoMode = false }) => {
+    // ECO / COOL PHONE MODE: Render lightweight, gorgeous, battery-friendly romantic atmosphere
+    if (ecoMode) {
+      switch (themeId) {
+        case 'moonlight':
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-gradient-to-b from-[#0a0f24] via-[#101538] to-[#181135]">
+              {/* Soft Moon Orb */}
+              <div className="absolute top-6 right-8 w-20 h-20 rounded-full bg-gradient-to-tr from-sky-100 to-indigo-100 shadow-[0_0_35px_rgba(186,230,253,0.4)] opacity-90" />
+              {/* Gentle Floating Celestial Accents */}
+              {['✨', '⭐', '✨', '🌟', '🌙'].map((emoji, i) => (
+                <div
+                  key={i}
+                  className="absolute text-base text-sky-200/70 select-none animate-float-slow"
+                  style={{
+                    left: `${12 + i * 20}%`,
+                    bottom: `${10 + (i % 3) * 15}%`,
+                    animationDuration: `${7 + i * 2}s`,
+                    animationDelay: `${i * 1.2}s`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              ))}
+            </div>
+          );
+
+        case 'sunset':
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-gradient-to-b from-purple-950/70 via-rose-900/50 to-amber-900/40">
+              {/* Sun Horizon Glow */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-44 h-44 rounded-full bg-gradient-to-t from-amber-400 via-rose-500 to-transparent blur-lg opacity-80" />
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-28 h-28 rounded-full bg-yellow-300 shadow-[0_0_45px_rgba(251,191,36,0.7)] opacity-95" />
+              {/* Gentle Sunset Emojis */}
+              {['💖', '🧡', '✨', '🌅', '🥂'].map((emoji, i) => (
+                <div
+                  key={i}
+                  className="absolute text-lg select-none animate-float-slow opacity-85"
+                  style={{
+                    left: `${10 + i * 18}%`,
+                    bottom: `${8 + (i % 3) * 14}%`,
+                    animationDuration: `${6 + i * 1.5}s`,
+                    animationDelay: `${i * 1.1}s`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              ))}
+            </div>
+          );
+
+        case 'candlelight':
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-gradient-to-b from-[#140608] via-[#240a0e] to-[#100305]">
+              {/* Warm Candle Pool */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-amber-500/20 blur-xl" />
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-gradient-to-t from-amber-400 to-transparent blur-md opacity-80" />
+              {/* Soft Rose Petals */}
+              {['🌹', '✨', '🥀', '🕯️', '🌹'].map((emoji, i) => (
+                <div
+                  key={i}
+                  className="absolute text-lg select-none animate-float-slow opacity-85"
+                  style={{
+                    left: `${14 + i * 18}%`,
+                    bottom: `${12 + (i % 3) * 16}%`,
+                    animationDuration: `${6.5 + i * 1.5}s`,
+                    animationDelay: `${i * 1.2}s`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              ))}
+            </div>
+          );
+
+        case 'sakura':
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-gradient-to-b from-[#1a0a21] via-[#2d1235] to-[#45163f]">
+              {/* Soft Spring Mist */}
+              <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-pink-400/10 blur-xl" />
+              {/* Falling Sakura Blossoms */}
+              {[
+                { left: '10%', delay: '0.2s', dur: '6s', size: 'text-xl', content: '🌸' },
+                { left: '30%', delay: '1.5s', dur: '7s', size: 'text-2xl', content: '💮' },
+                { left: '50%', delay: '0.8s', dur: '6.5s', size: 'text-xl', content: '🌸' },
+                { left: '70%', delay: '2.2s', dur: '7.5s', size: 'text-2xl', content: '🌸' },
+                { left: '88%', delay: '1.2s', dur: '6.2s', size: 'text-lg', content: '🍃' },
+              ].map((sakura, i) => (
+                <div
+                  key={i}
+                  className={`absolute ${sakura.size} select-none animate-sakura-fall`}
+                  style={{
+                    left: sakura.left,
+                    top: '-30px',
+                    animationDelay: sakura.delay,
+                    animationDuration: sakura.dur,
+                  }}
+                >
+                  {sakura.content}
+                </div>
+              ))}
+            </div>
+          );
+
+        case 'aurora':
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-gradient-to-b from-[#0b0c1e] via-[#12102f] to-[#0a1e22]">
+              {/* Soft Aurora Glow Ribbon */}
+              <div className="absolute top-8 -left-10 w-[120%] h-48 bg-gradient-to-r from-emerald-500/20 via-cyan-400/20 to-purple-500/15 blur-2xl" />
+              {/* Neon Hearts */}
+              {['💜', '💖', '✨', '💫', '💚'].map((emoji, i) => (
+                <div
+                  key={i}
+                  className="absolute text-lg select-none animate-float-slow opacity-85"
+                  style={{
+                    left: `${15 + i * 18}%`,
+                    bottom: `${10 + (i % 3) * 16}%`,
+                    animationDuration: `${6 + i * 1.5}s`,
+                    animationDelay: `${i * 1.2}s`,
+                  }}
+                >
+                  {emoji}
+                </div>
+              ))}
+            </div>
+          );
+      }
+    }
+
+    // FULL FIDELITY MODE (Desktop / Power plugged in)
+    switch (themeId) {
+      case 'moonlight':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            {/* Luminous Moon Orb */}
+            <div className="absolute top-6 right-8 md:top-10 md:right-16 w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-tr from-slate-100 via-sky-100 to-indigo-200 shadow-[0_0_60px_rgba(186,230,253,0.5)] flex items-center justify-center opacity-95">
+              <div className="w-5 h-5 rounded-full bg-slate-300/40 absolute top-4 left-6" />
+              <div className="w-8 h-8 rounded-full bg-slate-300/30 absolute bottom-5 right-7" />
+              <div className="w-3 h-3 rounded-full bg-slate-300/30 absolute top-12 left-12" />
+            </div>
+
+            {/* Static Pre-Computed Stars */}
+            {STATIC_STARS.map((star, i) => (
+              <div
+                key={`star-${i}`}
+                className="absolute rounded-full bg-white animate-pulse"
+                style={{
+                  top: star.top,
+                  left: star.left,
+                  width: `${star.size}px`,
+                  height: `${star.size}px`,
+                  animationDelay: star.delay,
+                  animationDuration: star.dur,
+                  boxShadow: `0 0 6px rgba(255,255,255,0.7)`,
+                }}
+              />
+            ))}
+
+            {/* Floating stardust specks */}
+            {['✨', '⭐', '✨', '🌟', '🌙'].map((emoji, i) => (
+              <div
+                key={i}
+                className="absolute text-lg text-sky-200/60 select-none animate-float-slow"
+                style={{
+                  left: `${15 + i * 18}%`,
+                  bottom: `${10 + (i % 3) * 15}%`,
+                  animationDuration: `${6 + i * 2}s`,
+                  animationDelay: `${i * 1.3}s`,
+                }}
+              >
+                {emoji}
+              </div>
+            ))}
           </div>
+        );
 
-          {/* Silver rays from the moon */}
-          <div className="absolute -top-20 right-0 w-[800px] h-[800px] bg-gradient-to-bl from-white/10 via-sky-200/5 to-transparent blur-2xl transform rotate-[25deg] pointer-events-none opacity-70 animate-light-leak" />
-          <div className="absolute -top-10 -right-20 w-[600px] h-[600px] bg-gradient-to-bl from-white/15 via-indigo-200/5 to-transparent blur-3xl transform rotate-12 pointer-events-none opacity-60 animate-light-leak" style={{ animationDelay: '2s' }} />
+      case 'sunset':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            {/* Setting sun orb */}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-48 h-48 md:w-64 md:h-64 rounded-full bg-gradient-to-t from-amber-400 via-rose-500 to-transparent blur-xl opacity-70" />
+            <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-32 h-32 md:w-44 md:h-44 rounded-full bg-gradient-to-t from-yellow-300 via-amber-400 to-rose-400 shadow-[0_0_80px_rgba(251,191,36,0.8)] opacity-95" />
+            {/* Floating warm sunset hearts */}
+            {['💖', '🧡', '✨', '🌅', '🥂', '💖'].map((emoji, i) => (
+              <div
+                key={i}
+                className="absolute text-xl select-none animate-float-slow opacity-80"
+                style={{
+                  left: `${10 + i * 16}%`,
+                  bottom: `${5 + (i % 4) * 12}%`,
+                  animationDuration: `${5 + i * 1.5}s`,
+                  animationDelay: `${i * 0.9}s`,
+                }}
+              >
+                {emoji}
+              </div>
+            ))}
+          </div>
+        );
 
-          {/* Dense Twinkling celestial stars */}
-          {Array.from({ length: 40 }).map((_, i) => (
-            <div
-              key={`star-${i}`}
-              className="absolute rounded-full bg-white animate-pulse"
-              style={{
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                width: `${Math.random() * 3 + 1}px`,
-                height: `${Math.random() * 3 + 1}px`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${Math.random() * 3 + 2}s`,
-                boxShadow: `0 0 ${Math.random() * 10 + 5}px rgba(255,255,255,${Math.random() * 0.5 + 0.5})`,
-                opacity: Math.random() * 0.7 + 0.3,
-              }}
-            />
-          ))}
+      case 'candlelight':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            {/* Warm candlelight glow */}
+            <div className="absolute bottom-4 left-8 w-64 h-64 rounded-full bg-gradient-to-tr from-amber-500/35 via-orange-600/15 to-transparent blur-2xl" />
+            <div className="absolute bottom-4 right-8 w-64 h-64 rounded-full bg-gradient-to-tl from-amber-500/35 via-rose-600/15 to-transparent blur-2xl" />
 
-          {/* Shooting Stars */}
-          {[1, 2, 3].map((i) => (
-            <div
-              key={`shooting-${i}`}
-              className="absolute h-[1px] w-[100px] bg-gradient-to-r from-transparent via-white to-white animate-shooting-star opacity-0"
-              style={{
-                top: `${Math.random() * 40}%`,
-                left: `${Math.random() * 60 + 20}%`,
-                animationDelay: `${Math.random() * 15 + i * 5}s`,
-                transform: 'rotate(-45deg)',
-              }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[3px] h-[3px] bg-white rounded-full shadow-[0_0_10px_#fff]" />
-            </div>
-          ))}
+            {/* Drifting red rose petals */}
+            {[
+              { left: '12%', delay: '0s', dur: '7s', rot: '45deg', size: 'text-2xl' },
+              { left: '28%', delay: '2.5s', dur: '8s', rot: '-30deg', size: 'text-xl' },
+              { left: '46%', delay: '1s', dur: '6.5s', rot: '60deg', size: 'text-2xl' },
+              { left: '68%', delay: '3.2s', dur: '7.5s', rot: '-45deg', size: 'text-xl' },
+              { left: '84%', delay: '1.8s', dur: '8.5s', rot: '25deg', size: 'text-2xl' },
+            ].map((petal, i) => (
+              <div
+                key={i}
+                className={`absolute ${petal.size} select-none animate-petal-swirl`}
+                style={{
+                  left: petal.left,
+                  top: '-20px',
+                  animationDelay: petal.delay,
+                  animationDuration: petal.dur,
+                }}
+              >
+                <div style={{ transform: `rotate(${petal.rot})` }}>{i % 2 === 0 ? '🌹' : '🥀'}</div>
+              </div>
+            ))}
 
-          {/* Drifting cosmic dust */}
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={`dust-${i}`}
-              className="absolute w-1 h-1 rounded-full bg-sky-200/40 animate-sparkle-float blur-[1px]"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDuration: `${Math.random() * 10 + 10}s`,
-                animationDelay: `${Math.random() * 5}s`,
-              }}
-            />
-          ))}
+            {/* Warm embers */}
+            {['✨', '🔥', '✨', '🕯️', '✨'].map((emoji, i) => (
+              <div
+                key={i}
+                className="absolute text-base text-amber-200 select-none animate-float-slow opacity-75"
+                style={{
+                  left: `${18 + i * 16}%`,
+                  bottom: `${15 + (i % 3) * 20}%`,
+                  animationDuration: `${4.5 + i}s`,
+                  animationDelay: `${i * 1.1}s`,
+                }}
+              >
+                {emoji}
+              </div>
+            ))}
+          </div>
+        );
 
-          {/* Floating stardust specks */}
-          {['✨', '⭐', '✨', '🌟', '🌙'].map((emoji, i) => (
-            <div
-              key={i}
-              className="absolute text-lg text-sky-200/60 select-none animate-float-slow"
-              style={{
-                left: `${15 + i * 18}%`,
-                bottom: `${10 + (i % 3) * 15}%`,
-                animationDuration: `${6 + i * 2}s`,
-                animationDelay: `${i * 1.3}s`,
-              }}
-            >
-              {emoji}
-            </div>
-          ))}
-        </div>
-      );
+      case 'sakura':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            {/* Soft pink sakura blossoms */}
+            {[
+              { left: '10%', delay: '0.2s', dur: '6s', size: 'text-2xl', content: '🌸' },
+              { left: '25%', delay: '2.1s', dur: '7.5s', size: 'text-xl', content: '💮' },
+              { left: '45%', delay: '1.1s', dur: '6.8s', size: 'text-2xl', content: '🌸' },
+              { left: '65%', delay: '3.4s', dur: '8s', size: 'text-lg', content: '🌸' },
+              { left: '85%', delay: '0.8s', dur: '7s', size: 'text-3xl', content: '💮' },
+              { left: '92%', delay: '2.7s', dur: '6.2s', size: 'text-xl', content: '🍃' },
+            ].map((sakura, i) => (
+              <div
+                key={i}
+                className={`absolute ${sakura.size} select-none animate-sakura-fall`}
+                style={{
+                  left: sakura.left,
+                  top: '-40px',
+                  animationDelay: sakura.delay,
+                  animationDuration: sakura.dur,
+                }}
+              >
+                {sakura.content}
+              </div>
+            ))}
+          </div>
+        );
 
-    case 'sunset':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-          {/* Color-shifting sky bands */}
-          <div className="absolute inset-0 bg-gradient-to-b from-violet-900/40 via-coral-500/30 to-amber-500/40 opacity-80 animate-light-leak" style={{ animationDuration: '12s' }} />
-
-          {/* Setting glowing sun orb at horizon */}
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-48 h-48 md:w-64 md:h-64 rounded-full bg-gradient-to-t from-amber-400 via-rose-500 to-transparent blur-xl opacity-70 animate-pulse" />
-          
-          {/* Sun Rays fanning out */}
-          <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-[conic-gradient(from_0deg_at_50%_100%,_rgba(251,191,36,0)_0deg,_rgba(251,191,36,0.1)_45deg,_rgba(251,191,36,0)_90deg,_rgba(251,191,36,0.1)_135deg,_rgba(251,191,36,0)_180deg)] opacity-60 animate-bokeh-drift" style={{ animationDuration: '40s' }} />
-
-          <div className="absolute bottom-14 left-1/2 -translate-x-1/2 w-32 h-32 md:w-44 md:h-44 rounded-full bg-gradient-to-t from-yellow-300 via-amber-400 to-rose-400 shadow-[0_0_100px_rgba(251,191,36,0.9)] opacity-95" />
-
-          {/* Ocean sunset shimmer band and gentle wave ripples */}
-          <div className="absolute bottom-0 inset-x-0 h-32 bg-gradient-to-t from-amber-600/40 via-rose-500/20 to-transparent blur-md" />
-          {[1, 2, 3].map((i) => (
-            <div 
-              key={`ripple-${i}`}
-              className="absolute inset-x-0 h-2 bg-gradient-to-r from-transparent via-amber-300/40 to-transparent blur-[2px] animate-bokeh-drift"
-              style={{
-                bottom: `${i * 12}px`,
-                animationDuration: `${3 + i}s`,
-                animationDirection: i % 2 === 0 ? 'normal' : 'reverse',
-                transform: `scaleX(${1 + i * 0.1})`,
-              }}
-            />
-          ))}
-
-          {/* Dramatic layered cloud silhouettes at the horizon */}
-          <div className="absolute bottom-16 -left-10 w-64 h-16 bg-rose-950/40 rounded-[100px] blur-xl" />
-          <div className="absolute bottom-20 -right-10 w-80 h-20 bg-purple-950/30 rounded-[100px] blur-xl" />
-          <div className="absolute bottom-10 left-1/4 w-96 h-12 bg-amber-900/40 rounded-[100px] blur-lg" />
-
-          {/* Floating golden light motes */}
-          {Array.from({ length: 15 }).map((_, i) => (
-            <div
-              key={`mote-${i}`}
-              className="absolute w-2 h-2 rounded-full bg-amber-200/60 shadow-[0_0_10px_rgba(253,230,138,0.8)] animate-sparkle-float"
-              style={{
-                left: `${Math.random() * 100}%`,
-                bottom: `${Math.random() * 40}%`,
-                animationDuration: `${Math.random() * 4 + 4}s`,
-                animationDelay: `${Math.random() * 3}s`,
-              }}
-            />
-          ))}
-
-          {/* Floating warm sunset hearts & golden embers */}
-          {['💖', '🧡', '✨', '🌅', '🥂', '💖'].map((emoji, i) => (
-            <div
-              key={i}
-              className="absolute text-xl select-none animate-float-slow opacity-80"
-              style={{
-                left: `${10 + i * 16}%`,
-                bottom: `${5 + (i % 4) * 12}%`,
-                animationDuration: `${5 + i * 1.5}s`,
-                animationDelay: `${i * 0.9}s`,
-              }}
-            >
-              {emoji}
-            </div>
-          ))}
-        </div>
-      );
-
-    case 'candlelight':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-          {/* Ambient Warm Light Pools */}
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-amber-600/10 blur-[100px] animate-light-leak" style={{ animationDuration: '7s' }} />
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-rose-600/10 blur-[100px] animate-light-leak" style={{ animationDuration: '9s', animationDelay: '1s' }} />
-
-          {/* Multiple distinct candle flame shapes with independent flickers */}
-          <div className="absolute bottom-8 left-[15%] w-12 h-24 bg-[radial-gradient(ellipse_at_center,_rgba(253,230,138,0.8)_0%,_rgba(245,158,11,0.4)_40%,_transparent_70%)] animate-flicker-glow" style={{ animationDuration: '0.15s' }} />
-          <div className="absolute bottom-12 left-[25%] w-8 h-16 bg-[radial-gradient(ellipse_at_center,_rgba(253,230,138,0.7)_0%,_rgba(245,158,11,0.3)_40%,_transparent_70%)] animate-flicker-glow" style={{ animationDuration: '0.2s', animationDelay: '0.1s' }} />
-          
-          <div className="absolute bottom-6 right-[15%] w-16 h-32 bg-[radial-gradient(ellipse_at_center,_rgba(253,230,138,0.9)_0%,_rgba(245,158,11,0.5)_40%,_transparent_70%)] animate-flicker-glow" style={{ animationDuration: '0.12s' }} />
-          <div className="absolute bottom-10 right-[22%] w-10 h-20 bg-[radial-gradient(ellipse_at_center,_rgba(253,230,138,0.7)_0%,_rgba(245,158,11,0.3)_40%,_transparent_70%)] animate-flicker-glow" style={{ animationDuration: '0.18s', animationDelay: '0.05s' }} />
-
-          {/* Bottom candlelight warm flickering glows */}
-          <div className="absolute bottom-4 left-8 w-64 h-64 rounded-full bg-gradient-to-tr from-amber-500/40 via-orange-600/20 to-transparent blur-3xl animate-candle-flicker-1" />
-          <div className="absolute bottom-4 right-8 w-64 h-64 rounded-full bg-gradient-to-tl from-amber-500/40 via-rose-600/20 to-transparent blur-3xl animate-candle-flicker-2" />
-          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-72 h-72 rounded-full bg-rose-950/40 blur-3xl" />
-
-          {/* Smoke wisps rising from flames */}
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={`smoke-${i}`}
-              className="absolute w-4 h-32 bg-gradient-to-t from-transparent via-white/5 to-transparent blur-md animate-smoke-drift"
-              style={{
-                left: i % 2 === 0 ? `${15 + i * 2}%` : `${85 - i * 2}%`,
-                bottom: '100px',
-                animationDuration: `${4 + i}s`,
-                animationDelay: `${i * 1.5}s`,
-              }}
-            />
-          ))}
-
-          {/* Drifting red rose petals (Swirling paths) */}
-          {[
-            { left: '12%', delay: '0s', dur: '7s', rot: '45deg', size: 'text-2xl', z: 'z-10' },
-            { left: '28%', delay: '2.5s', dur: '8s', rot: '-30deg', size: 'text-xl', z: 'z-0' },
-            { left: '46%', delay: '1s', dur: '6.5s', rot: '60deg', size: 'text-2xl', z: 'z-10' },
-            { left: '68%', delay: '3.2s', dur: '7.5s', rot: '-45deg', size: 'text-xl', z: 'z-0' },
-            { left: '84%', delay: '1.8s', dur: '8.5s', rot: '25deg', size: 'text-2xl', z: 'z-10' },
-            { left: '35%', delay: '4s', dur: '9s', rot: '90deg', size: 'text-3xl', z: 'z-20 blur-[2px]' },
-            { left: '75%', delay: '5s', dur: '8.2s', rot: '-15deg', size: 'text-lg', z: 'z-0 blur-[1px]' },
-          ].map((petal, i) => (
-            <div
-              key={i}
-              className={`absolute ${petal.size} ${petal.z} select-none animate-petal-swirl`}
-              style={{
-                left: petal.left,
-                top: '-20px',
-                animationDelay: petal.delay,
-                animationDuration: petal.dur,
-              }}
-            >
-              <div style={{ transform: `rotate(${petal.rot})` }}>{i % 2 === 0 ? '🌹' : '🥀'}</div>
-            </div>
-          ))}
-
-          {/* Floating warm embers */}
-          {['✨', '🔥', '✨', '🕯️', '✨'].map((emoji, i) => (
-            <div
-              key={i}
-              className="absolute text-base text-amber-200 select-none animate-float-slow opacity-75"
-              style={{
-                left: `${18 + i * 16}%`,
-                bottom: `${15 + (i % 3) * 20}%`,
-                animationDuration: `${4.5 + i}s`,
-                animationDelay: `${i * 1.1}s`,
-              }}
-            >
-              {emoji}
-            </div>
-          ))}
-        </div>
-      );
-
-    case 'sakura':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-          {/* Distant mountain/torii silhouette in very subtle opacity */}
-          <div className="absolute bottom-0 left-0 w-full h-48 bg-gradient-to-t from-pink-950/20 to-transparent" />
-          <div className="absolute bottom-10 left-1/4 w-32 h-32 border-4 border-pink-900/10 opacity-30 transform -skew-x-12 rounded-t-lg" />
-          
-          {/* Soft pastel sakura petal mist and Bokeh circles */}
-          <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-pink-400/15 blur-[80px] animate-light-leak" style={{ animationDuration: '8s' }} />
-          <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] rounded-full bg-fuchsia-400/10 blur-[100px] animate-light-leak" style={{ animationDuration: '11s', animationDelay: '2s' }} />
-
-          {/* Soft pink bokeh circles */}
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={`bokeh-${i}`}
-              className="absolute rounded-full bg-pink-200/20 blur-md animate-bokeh-drift"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                width: `${Math.random() * 100 + 50}px`,
-                height: `${Math.random() * 100 + 50}px`,
-                animationDuration: `${Math.random() * 20 + 20}s`,
-                animationDelay: `${Math.random() * 5}s`,
-              }}
-            />
-          ))}
-
-          {/* Gentle breeze effect - Dancing Pink Sakura Blossoms with windswept movement */}
-          {[
-            { left: '-5%', delay: '0.2s', dur: '6s', size: 'text-2xl', content: '🌸' },
-            { left: '10%', delay: '2.1s', dur: '7.5s', size: 'text-xl', content: '💮' },
-            { left: '25%', delay: '1.1s', dur: '6.8s', size: 'text-2xl', content: '🌸' },
-            { left: '40%', delay: '3.4s', dur: '8s', size: 'text-lg', content: '🌸' },
-            { left: '55%', delay: '0.8s', dur: '7s', size: 'text-3xl', content: '💮' },
-            { left: '70%', delay: '2.7s', dur: '6.2s', size: 'text-xl', content: '🍃' },
-            { left: '85%', delay: '1.5s', dur: '7.8s', size: 'text-2xl', content: '🌸' },
-            { left: '95%', delay: '4.0s', dur: '6.5s', size: 'text-lg', content: '💮' },
-            { left: '-10%', delay: '5.2s', dur: '5.5s', size: 'text-4xl', content: '🌸', z: 'blur-[2px] z-20' },
-            { left: '30%', delay: '6.1s', dur: '8.5s', size: 'text-sm', content: '🌸', z: 'blur-[1px] z-0' },
-            { left: '60%', delay: '4.5s', dur: '7.2s', size: 'text-2xl', content: '🍃' },
-            { left: '80%', delay: '7.0s', dur: '6s', size: 'text-3xl', content: '🌸', z: 'blur-[3px] z-20' },
-          ].map((sakura, i) => (
-            <div
-              key={i}
-              className={`absolute ${sakura.size} ${sakura.z || 'z-10'} select-none animate-sakura-fall`}
-              style={{
-                left: sakura.left,
-                top: '-50px',
-                animationDelay: sakura.delay,
-                animationDuration: sakura.dur,
-              }}
-            >
-              {sakura.content}
-            </div>
-          ))}
-        </div>
-      );
-
-    case 'aurora':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-          {/* Faint horizon line glow and subtle star field */}
-          <div className="absolute bottom-0 w-full h-32 bg-gradient-to-t from-teal-900/40 to-transparent blur-lg" />
-          {Array.from({ length: 30 }).map((_, i) => (
-            <div
-              key={`astart-${i}`}
-              className="absolute rounded-full bg-white/60 animate-pulse"
-              style={{
-                top: `${Math.random() * 60}%`,
-                left: `${Math.random() * 100}%`,
-                width: `${Math.random() * 2 + 1}px`,
-                height: `${Math.random() * 2 + 1}px`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${Math.random() * 3 + 2}s`,
-              }}
-            />
-          ))}
-
-          {/* Northern Lights / Multiple Aurora Waves with complex color-shifting */}
-          <div className="absolute -top-10 -left-[20%] w-[140%] h-80 bg-gradient-to-br from-emerald-500/30 via-violet-500/25 to-transparent blur-[60px] animate-aurora-wave-1 transform -rotate-6 origin-top-left" />
-          <div className="absolute top-10 -right-[10%] w-[120%] h-72 bg-gradient-to-bl from-cyan-400/25 via-purple-500/20 to-transparent blur-[50px] animate-aurora-wave-2 transform rotate-3 origin-top-right" />
-          <div className="absolute top-32 -left-[10%] w-[120%] h-64 bg-gradient-to-r from-fuchsia-500/20 via-teal-400/20 to-indigo-500/10 blur-[40px] animate-aurora-wave-1" style={{ animationDelay: '2s', animationDuration: '7s' }} />
-          <div className="absolute top-48 right-0 w-[100%] h-48 bg-gradient-to-l from-emerald-400/15 via-blue-500/15 to-transparent blur-[40px] animate-aurora-wave-2" style={{ animationDelay: '1s', animationDuration: '9s' }} />
-
-          {/* Electric sparkle bursts along aurora edges */}
-          {Array.from({ length: 15 }).map((_, i) => (
-            <div
-              key={`asparkle-${i}`}
-              className="absolute w-1 h-1 rounded-full bg-cyan-200 shadow-[0_0_8px_#67e8f9] animate-sparkle-float"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 40 + 10}%`,
-                animationDuration: `${Math.random() * 3 + 2}s`,
-                animationDelay: `${Math.random() * 5}s`,
-              }}
-            />
-          ))}
-
-          {/* Floating neon hearts */}
-          {['💜', '💖', '✨', '💫', '💚', '💜'].map((emoji, i) => (
-            <div
-              key={i}
-              className="absolute text-xl select-none animate-float-slow opacity-85 filter drop-shadow-[0_0_15px_rgba(168,85,247,0.9)]"
-              style={{
-                left: `${12 + i * 15}%`,
-                bottom: `${10 + (i % 3) * 18}%`,
-                animationDuration: `${5.5 + i}s`,
-                animationDelay: `${i * 1.2}s`,
-              }}
-            >
-              {emoji}
-            </div>
-          ))}
-        </div>
-      );
+      case 'aurora':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            {/* Northern Lights Aurora Waves */}
+            <div className="absolute -top-10 -left-[20%] w-[140%] h-72 bg-gradient-to-br from-emerald-500/25 via-violet-500/20 to-transparent blur-3xl transform -rotate-6" />
+            <div className="absolute top-10 -right-[10%] w-[120%] h-64 bg-gradient-to-bl from-cyan-400/20 via-purple-500/15 to-transparent blur-2xl transform rotate-3" />
+            {/* Neon hearts */}
+            {['💜', '💖', '✨', '💫', '💚', '💜'].map((emoji, i) => (
+              <div
+                key={i}
+                className="absolute text-xl select-none animate-float-slow opacity-85"
+                style={{
+                  left: `${12 + i * 15}%`,
+                  bottom: `${10 + (i % 3) * 18}%`,
+                  animationDuration: `${5.5 + i}s`,
+                  animationDelay: `${i * 1.2}s`,
+                }}
+              >
+                {emoji}
+              </div>
+            ))}
+          </div>
+        );
+    }
   }
-};
+);
 
 // ================= FILTER OVERLAY VISUAL EFFECT COMPONENT =================
-const FilterOverlayEffect: React.FC<{ filterId: RomanticFilterId }> = ({ filterId }) => {
-  switch (filterId) {
-    case 'fairy':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
-          {/* Luminous vignette and prismatic leaks */}
-          <div className="absolute inset-0 shadow-[inset_0_0_60px_rgba(255,255,255,0.15)] pointer-events-none" />
-          <div className="absolute -top-20 -right-20 w-64 h-64 bg-gradient-to-bl from-pink-300/20 via-purple-300/10 to-transparent rounded-full blur-2xl animate-light-leak" />
-          <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-gradient-to-tr from-cyan-300/20 via-emerald-300/10 to-transparent rounded-full blur-2xl animate-light-leak" style={{ animationDelay: '2s' }} />
-          
-          {/* Animated sparkles/twinkles */}
-          {Array.from({ length: 25 }).map((_, i) => (
-            <div
-              key={`fairy-sparkle-${i}`}
-              className="absolute rounded-full bg-white shadow-[0_0_5px_#fff] animate-sparkle-float"
-              style={{
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                width: `${Math.random() * 3 + 1}px`,
-                height: `${Math.random() * 3 + 1}px`,
-                animationDuration: `${Math.random() * 4 + 2}s`,
-                animationDelay: `${Math.random() * 2}s`,
-              }}
-            />
-          ))}
-          {/* Golden dust drifting upward */}
-          {Array.from({ length: 15 }).map((_, i) => (
-            <div
-              key={`fairy-dust-${i}`}
-              className="absolute w-1.5 h-1.5 bg-yellow-200/60 rounded-full blur-[1px] animate-smoke-drift"
-              style={{
-                left: `${Math.random() * 100}%`,
-                bottom: '-10px',
-                animationDuration: `${Math.random() * 5 + 5}s`,
-                animationDelay: `${Math.random() * 5}s`,
-              }}
-            />
-          ))}
-        </div>
-      );
-    case 'golden':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl mix-blend-overlay">
-          {/* Warm vignette */}
-          <div className="absolute inset-0 shadow-[inset_0_0_100px_rgba(180,83,9,0.3)] pointer-events-none" />
-          
-          {/* Golden light leak */}
-          <div className="absolute -top-32 -right-32 w-96 h-96 bg-gradient-to-bl from-amber-400/40 via-yellow-500/20 to-transparent rounded-full blur-[60px] animate-light-leak" />
-          
-          {/* Lens flare circles */}
-          <div className="absolute top-[20%] right-[20%] w-24 h-24 rounded-full border border-amber-300/10 bg-amber-400/5 blur-[2px] transform -rotate-45" />
-          <div className="absolute top-[35%] right-[35%] w-12 h-12 rounded-full border border-amber-200/15 bg-amber-300/10 blur-[1px] transform -rotate-45" />
-          
-          {/* Golden particle dust */}
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={`golden-dust-${i}`}
-              className="absolute rounded-full bg-amber-300/60 blur-[1px] animate-sparkle-float"
-              style={{
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                width: `${Math.random() * 4 + 2}px`,
-                height: `${Math.random() * 4 + 2}px`,
-                animationDuration: `${Math.random() * 6 + 4}s`,
-                animationDelay: `${Math.random() * 3}s`,
-              }}
-            />
-          ))}
-        </div>
-      );
-    case 'rose':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
-          {/* Soft pink/rose tint vignette */}
-          <div className="absolute inset-0 shadow-[inset_0_0_80px_rgba(225,29,72,0.15)] bg-rose-500/5 mix-blend-color pointer-events-none" />
-          <div className="absolute inset-0 shadow-[inset_0_0_120px_rgba(244,63,94,0.2)] pointer-events-none" />
-          
-          {/* Soft-focus bloom effect in corners */}
-          <div className="absolute -top-16 -left-16 w-64 h-64 bg-pink-400/15 rounded-full blur-[50px] animate-light-leak" />
-          <div className="absolute -bottom-16 -right-16 w-64 h-64 bg-rose-400/15 rounded-full blur-[50px] animate-light-leak" style={{ animationDelay: '2s' }} />
+// Memoized and Eco-Optimized: Avoids heavy SVG feTurbulence filters that cause phone overheating.
+const FilterOverlayEffect = React.memo<{ filterId: RomanticFilterId; ecoMode?: boolean }>(
+  ({ filterId, ecoMode = false }) => {
+    if (ecoMode) {
+      // In Eco/Mobile mode, keep live camera streams fast and cool with simple CSS vignette
+      return <div className="absolute inset-0 pointer-events-none rounded-3xl border border-white/10" />;
+    }
 
-          {/* Floating translucent petal shapes (CSS) */}
-          {Array.from({ length: 15 }).map((_, i) => (
-            <div
-              key={`rose-petal-${i}`}
-              className="absolute bg-rose-300/40 rounded-tl-full rounded-br-full blur-[1px] animate-petal-swirl"
-              style={{
-                width: `${Math.random() * 10 + 8}px`,
-                height: `${Math.random() * 10 + 8}px`,
-                left: `${Math.random() * 100}%`,
-                top: '-20px',
-                animationDuration: `${Math.random() * 5 + 6}s`,
-                animationDelay: `${Math.random() * 6}s`,
-                transform: `rotate(${Math.random() * 360}deg)`,
-              }}
-            />
-          ))}
-        </div>
-      );
-    case 'candlelight':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl mix-blend-multiply">
-          {/* Amber vignette pulsing & cozy warm wash */}
-          <div className="absolute inset-0 shadow-[inset_0_0_150px_rgba(120,53,15,0.7)] bg-amber-900/10 pointer-events-none animate-flicker-glow" style={{ animationDuration: '4s' }} />
-          
-          <div className="absolute bottom-0 inset-x-0 h-48 bg-gradient-to-t from-orange-600/30 via-amber-700/10 to-transparent blur-xl" />
-          
-          {/* Dancing shadow edges */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_40%,_rgba(0,0,0,0.3)_100%)] pointer-events-none animate-flicker-glow" style={{ animationDuration: '3s', animationDelay: '0.5s' }} />
-
-          {/* Warm light particles rising */}
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={`candle-ember-${i}`}
-              className="absolute w-1.5 h-1.5 bg-orange-300/80 rounded-full blur-[1px] shadow-[0_0_5px_#f97316] animate-smoke-drift"
-              style={{
-                left: `${Math.random() * 100}%`,
-                bottom: '-10px',
-                animationDuration: `${Math.random() * 4 + 3}s`,
-                animationDelay: `${Math.random() * 3}s`,
-              }}
-            />
-          ))}
-        </div>
-      );
-    case 'vintage':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
-          {/* Rounded dark vignette corners (lens) */}
-          <div className="absolute inset-0 border-[16px] border-black/40 rounded-3xl pointer-events-none" />
-          <div className="absolute inset-0 shadow-[inset_0_0_120px_rgba(0,0,0,0.8)] pointer-events-none" />
-          
-          {/* Film grain noise overlay (CSS repeating linear gradient hack for noise) */}
-          <div className="absolute inset-0 opacity-[0.08] mix-blend-overlay animate-grain-shift" 
-               style={{ 
-                 backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-               }} 
-          />
-          
-          {/* Faint horizontal scan lines */}
-          <div className="absolute inset-0 opacity-10 pointer-events-none"
-               style={{ backgroundImage: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.5) 51%)', backgroundSize: '100% 4px' }}
-          />
-
-          {/* Sepia-toned light leak */}
-          <div className="absolute -top-20 -left-10 w-80 h-96 bg-gradient-to-br from-amber-600/30 via-orange-900/10 to-transparent blur-3xl animate-light-leak" />
-        </div>
-      );
-    case 'dreamy':
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
-          {/* Soft dreamy bloom/glow vignette and pink-lavender color wash */}
-          <div className="absolute inset-0 shadow-[inset_0_0_100px_rgba(255,255,255,0.4)] pointer-events-none" />
-          <div className="absolute inset-0 bg-gradient-to-br from-pink-300/10 via-purple-300/10 to-indigo-300/10 mix-blend-overlay pointer-events-none" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.1)_0%,_transparent_60%)] pointer-events-none" />
-
-          {/* Soft light rays */}
-          <div className="absolute -top-[20%] left-[20%] w-[150%] h-[150%] bg-[conic-gradient(from_90deg_at_0%_0%,_rgba(255,255,255,0)_0deg,_rgba(255,255,255,0.1)_20deg,_rgba(255,255,255,0)_40deg)] opacity-60 animate-bokeh-drift" />
-
-          {/* Floating light bokeh circles */}
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div
-              key={`dreamy-bokeh-${i}`}
-              className="absolute rounded-full bg-white/20 blur-md animate-bokeh-drift"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                width: `${Math.random() * 60 + 20}px`,
-                height: `${Math.random() * 60 + 20}px`,
-                animationDuration: `${Math.random() * 15 + 15}s`,
-                animationDelay: `${Math.random() * 5}s`,
-              }}
-            />
-          ))}
-        </div>
-      );
-    default:
-      return null;
+    switch (filterId) {
+      case 'fairy':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
+            <div className="absolute inset-0 shadow-[inset_0_0_50px_rgba(255,255,255,0.15)] pointer-events-none" />
+            <div className="absolute -top-16 -right-16 w-56 h-56 bg-gradient-to-bl from-pink-300/15 via-purple-300/10 to-transparent rounded-full blur-xl" />
+            <div className="absolute -bottom-16 -left-16 w-56 h-56 bg-gradient-to-tr from-cyan-300/15 via-emerald-300/10 to-transparent rounded-full blur-xl" />
+          </div>
+        );
+      case 'golden':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
+            <div className="absolute inset-0 shadow-[inset_0_0_60px_rgba(180,83,9,0.25)] pointer-events-none" />
+            <div className="absolute -top-24 -right-24 w-72 h-72 bg-gradient-to-bl from-amber-400/25 via-yellow-500/15 to-transparent rounded-full blur-2xl" />
+          </div>
+        );
+      case 'rose':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
+            <div className="absolute inset-0 shadow-[inset_0_0_60px_rgba(244,63,94,0.15)] pointer-events-none" />
+            <div className="absolute -top-12 -left-12 w-48 h-48 bg-pink-400/10 rounded-full blur-xl" />
+            <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-rose-400/10 rounded-full blur-xl" />
+          </div>
+        );
+      case 'candlelight':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
+            <div className="absolute inset-0 shadow-[inset_0_0_80px_rgba(120,53,15,0.45)] pointer-events-none" />
+            <div className="absolute bottom-0 inset-x-0 h-32 bg-gradient-to-t from-orange-600/20 to-transparent blur-lg" />
+          </div>
+        );
+      case 'vintage':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
+            <div className="absolute inset-0 border-[8px] border-black/30 rounded-3xl pointer-events-none" />
+            <div className="absolute inset-0 shadow-[inset_0_0_70px_rgba(0,0,0,0.5)] pointer-events-none" />
+          </div>
+        );
+      case 'dreamy':
+        return (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-10 rounded-3xl">
+            <div className="absolute inset-0 shadow-[inset_0_0_60px_rgba(255,255,255,0.2)] pointer-events-none" />
+            <div className="absolute -top-[10%] left-[10%] w-[120%] h-[120%] bg-[radial-gradient(ellipse_at_center,_rgba(255,255,255,0.06)_0%,_transparent_60%)] pointer-events-none" />
+          </div>
+        );
+      default:
+        return null;
+    }
   }
-};
+);
 
 export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose }) => {
   const { profile, currentUserName, partnerName, partnerPhoto, partnerRole, partnerOnline } = useCouple();
@@ -653,6 +505,15 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [showNetworkSettings, setShowNetworkSettings] = useState(false);
   const [meteredAppInput, setMeteredAppInput] = useState(() => getMeteredCredentials().appName);
   const [meteredKeyInput, setMeteredKeyInput] = useState(() => getMeteredCredentials().apiKey);
+
+  // Cool Phone / Eco Mode: automatically enabled on mobile phones & tablets to prevent high CPU usage & overheating
+  const [ecoMode, setEcoMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.innerWidth < 768 ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    );
+  });
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -780,7 +641,6 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
         });
         setTimeout(() => setSyncToast(null), 3500);
-        soundFx.playPop(680, 0.08);
         return;
       }
 
@@ -815,7 +675,6 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         icon: trk ? trk.icon : '🎵',
       });
       setTimeout(() => setSyncToast(null), 3500);
-      soundFx.playPop(680, 0.08);
     });
 
     const unsubTrackChange = romanticMusic.onTrackChange((s) => {
@@ -1043,7 +902,6 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         icon: trk.icon,
       });
       setTimeout(() => setSyncToast(null), 3500);
-      soundFx.playPop(700, 0.08);
     }
   };
 
@@ -1204,7 +1062,6 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       icon: preset.icon,
     });
     setTimeout(() => setSyncToast(null), 3500);
-    soundFx.playPop(700, 0.08);
   };
 
   const handlePlayStreamingUrl = () => {
@@ -1238,7 +1095,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       icon: parsed.icon,
     });
     setTimeout(() => setSyncToast(null), 3500);
-    soundFx.playPop(720, 0.08);
+    setStreamingInputUrl('');
+    setStreamingInputTitle('');
   };
 
   const handleStopStreaming = () => {
@@ -1480,7 +1338,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       {/* Atmospheric Background Animation Layer */}
-      <AtmosphericBackground themeId={activeTheme} />
+      <AtmosphericBackground themeId={activeTheme} ecoMode={ecoMode} />
 
       {/* Bidirectional Sync Toast Banner */}
       {syncToast && (
@@ -1654,6 +1512,21 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             <Globe className="w-4 h-4 text-sky-300" />
             <span className="hidden sm:inline">Network</span>
             <span className={`w-1.5 h-1.5 rounded-full ${iceState === 'connected' ? 'bg-emerald-400' : iceState === 'failed' ? 'bg-rose-500' : 'bg-amber-400'}`} />
+          </button>
+
+          {/* Cool Phone / Battery Saver Mode Toggle */}
+          <button
+            type="button"
+            onClick={() => setEcoMode((prev) => !prev)}
+            title={ecoMode ? 'Cool Phone / Battery Saver Mode is ON (Click to toggle full VFX)' : 'Enable Cool Phone / Battery Saver Mode'}
+            className={`px-2.5 py-1.5 rounded-xl transition active:scale-95 border flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer ${
+              ecoMode
+                ? 'bg-cyan-500/30 hover:bg-cyan-500/40 text-cyan-200 border-cyan-400/50 ring-2 ring-cyan-400/30'
+                : 'bg-white/15 hover:bg-white/25 text-white border-white/20'
+            }`}
+          >
+            <span className={ecoMode ? 'animate-pulse' : ''}>❄️</span>
+            <span className="hidden sm:inline">{ecoMode ? 'Cool Phone: ON' : 'Cool Phone'}</span>
           </button>
 
           {/* Quick Play/Pause Background Music */}
@@ -2487,7 +2360,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     onLoadedMetadata={() => {
                       remoteVideoRef.current?.play().catch(() => {});
                     }}
-                    style={{ filter: currentFilterConfig.cssFilter }}
+                    style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
                     className={`w-full h-full transition-opacity duration-300 ${
                       partnerScreenSharing ? 'object-contain bg-black' : 'object-cover'
                     } ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
@@ -2495,7 +2368,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   {remoteStream && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
-                  {remoteStream && <FilterOverlayEffect filterId={activeFilter} />}
+                  {remoteStream && <FilterOverlayEffect filterId={activeFilter} ecoMode={ecoMode} />}
 
                   {/* Partner Screen Sharing Banner */}
                   {partnerScreenSharing && (
@@ -2553,7 +2426,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     onLoadedMetadata={() => {
                       localVideoRef.current?.play().catch(() => {});
                     }}
-                    style={{ filter: currentFilterConfig.cssFilter }}
+                    style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
                     className={`w-full h-full transition-opacity duration-300 ${
                       isScreenSharing ? 'object-contain bg-black' : 'object-cover -scale-x-100'
                     } ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
@@ -2561,7 +2434,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
-                  {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} />}
+                  {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} ecoMode={ecoMode} />}
 
                   {/* Self Screen Sharing Banner */}
                   {isScreenSharing && (
@@ -2616,7 +2489,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   onLoadedMetadata={() => {
                     remoteVideoRef.current?.play().catch(() => {});
                   }}
-                  style={{ filter: currentFilterConfig.cssFilter }}
+                  style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
                   className={`w-full h-full transition-opacity duration-300 ${
                     partnerScreenSharing ? 'object-contain bg-black' : 'object-cover'
                   } ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
@@ -2624,7 +2497,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 {remoteStream && (
                   <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                 )}
-                {remoteStream && <FilterOverlayEffect filterId={activeFilter} />}
+                {remoteStream && <FilterOverlayEffect filterId={activeFilter} ecoMode={ecoMode} />}
 
                 {/* Partner Screen Sharing Banner in PiP view */}
                 {partnerScreenSharing && (
@@ -2673,7 +2546,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     onLoadedMetadata={() => {
                       pipVideoRef.current?.play().catch(() => {});
                     }}
-                    style={{ filter: currentFilterConfig.cssFilter }}
+                    style={{ filter: ecoMode ? undefined : currentFilterConfig.cssFilter }}
                     className={`w-full h-full transition-opacity duration-300 ${
                       isScreenSharing ? 'object-contain bg-black' : 'object-cover -scale-x-100'
                     } ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
@@ -2681,7 +2554,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
-                  {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} />}
+                  {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} ecoMode={ecoMode} />}
 
                   {isScreenSharing && (
                     <div className="absolute top-1 left-1 z-30 px-1.5 py-0.5 rounded-full bg-indigo-600/90 text-white text-[9px] font-bold flex items-center gap-1">
@@ -2784,12 +2657,12 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           {showStreamingDock && (
             <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
               <iframe
+                key={streamingTrack.embedUrl}
                 src={streamingTrack.embedUrl}
                 width="100%"
                 height={streamingTrack.height || 152}
                 frameBorder="0"
                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
                 className="w-full rounded-xl transition-all"
                 title={streamingTrack.title}
               />

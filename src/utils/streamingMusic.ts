@@ -62,25 +62,35 @@ export function removeLinkedAccount(provider: StreamingProvider): void {
 }
 
 /**
- * Parse any user-provided URL and convert it into a secure embed player
+ * Extract clean URL from any raw input (even if user pasted text like "Listen to X on Spotify: https://...")
+ */
+function extractUrl(rawText: string): string {
+  const trimmed = rawText.trim();
+  const urlMatch = trimmed.match(/(https?:\/\/[^\s]+)/i);
+  return urlMatch ? urlMatch[1] : trimmed;
+}
+
+/**
+ * Parse any user-provided URL and convert it into a secure embed player.
+ * Bulletproof regexes handle internationalized URLs (/intl-en/, /intl-es/), mobile share links,
+ * YouTube shorts, YouTube music, playlists, and albums.
  */
 export function parseStreamingUrl(rawUrl: string, customTitle?: string): StreamingTrackInfo | null {
-  const url = rawUrl.trim();
+  const url = extractUrl(rawUrl);
   if (!url) return null;
 
-  // 1. Spotify
-  // Matches: open.spotify.com/track/{id}, open.spotify.com/playlist/{id}, open.spotify.com/album/{id}, open.spotify.com/artist/{id}
-  // Or spotify:track:{id}, spotify:playlist:{id}
+  // 1. Spotify (Supports international URLs e.g. open.spotify.com/intl-en/track/..., open.spotify.com/track/..., spotify:track:...)
   if (url.includes('spotify.com') || url.startsWith('spotify:')) {
-    let type: 'track' | 'playlist' | 'album' = 'track';
+    let type: 'track' | 'playlist' | 'album' | 'artist' | 'episode' = 'track';
     let id = '';
 
-    if (url.includes('spotify.com')) {
-      const match = url.match(/spotify\.com\/(track|playlist|album)\/([a-zA-Z0-9]+)/i);
-      if (match) {
-        type = match[1].toLowerCase() as 'track' | 'playlist' | 'album';
-        id = match[2];
-      }
+    // Matches standard and internationalized Spotify links (e.g., /intl-en/track/..., /intl-pt-br/playlist/..., /embed/track/...)
+    const spotifyMatch = url.match(
+      /spotify\.com\/(?:intl-[a-zA-Z-]+\/)?(?:embed\/)?(track|playlist|album|artist|episode)\/([a-zA-Z0-9]+)/i
+    );
+    if (spotifyMatch) {
+      type = spotifyMatch[1].toLowerCase() as any;
+      id = spotifyMatch[2];
     } else if (url.startsWith('spotify:')) {
       const parts = url.split(':');
       if (parts.length >= 3) {
@@ -91,7 +101,13 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
 
     if (id) {
       const embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
-      const title = customTitle || (type === 'playlist' ? 'Spotify Romantic Playlist' : type === 'album' ? 'Spotify Album' : 'Spotify Romantic Song');
+      const title =
+        customTitle ||
+        (type === 'playlist'
+          ? 'Spotify Romantic Playlist'
+          : type === 'album'
+          ? 'Spotify Album'
+          : 'Spotify Love Song');
       return {
         provider: 'spotify',
         embedUrl,
@@ -99,24 +115,22 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
         title,
         subtitle: `Spotify ${type.charAt(0).toUpperCase() + type.slice(1)}`,
         icon: '🟢',
-        type,
-        height: type === 'track' ? 80 : 152,
+        type: type === 'playlist' || type === 'album' ? type : 'track',
+        height: type === 'playlist' || type === 'album' ? 352 : 152,
       };
     }
   }
 
-  // 2. Apple Music
-  // Matches: music.apple.com/{country}/album/{name}/{id}?i={trackId}
-  // Or: music.apple.com/{country}/playlist/{name}/{id}
+  // 2. Apple Music (Handles /us/album/..., /in/playlist/..., with or without track ?i= query)
   if (url.includes('music.apple.com')) {
-    const cleanUrl = url.split('?')[0];
     const isPlaylist = url.includes('/playlist/');
     const isAlbum = url.includes('/album/');
     const type = isPlaylist ? 'playlist' : isAlbum ? 'album' : 'track';
 
-    // Replace music.apple.com with embed.music.apple.com
+    // Official Apple Music embed host
     const embedUrl = url.replace('https://music.apple.com', 'https://embed.music.apple.com');
-    const title = customTitle || (isPlaylist ? 'Apple Music Romantic Playlist' : 'Apple Music Love Ballad');
+    const title =
+      customTitle || (isPlaylist ? 'Apple Music Romantic Playlist' : 'Apple Music Love Ballad');
 
     return {
       provider: 'apple-music',
@@ -126,39 +140,70 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
       subtitle: `Apple Music ${type.charAt(0).toUpperCase() + type.slice(1)}`,
       icon: '🍎',
       type,
-      height: 152,
+      height: isPlaylist ? 352 : 152,
     };
   }
 
-  // 3. YouTube & YouTube Music
-  // Matches: youtube.com/watch?v={id}, youtu.be/{id}, music.youtube.com/watch?v={id}
+  // 3. YouTube & YouTube Music (Handles watch?v=, music.youtube.com, youtu.be, shorts, and playlists)
   if (url.includes('youtube.com') || url.includes('youtu.be')) {
     let videoId = '';
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
+    let playlistId = '';
 
-    if (match && match[2].length === 11) {
-      videoId = match[2];
+    try {
+      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      videoId = urlObj.searchParams.get('v') || '';
+      playlistId = urlObj.searchParams.get('list') || '';
+
+      if (!videoId && urlObj.pathname.includes('/shorts/')) {
+        videoId = urlObj.pathname.split('/shorts/')[1]?.split('/')[0]?.split('?')[0] || '';
+      }
+      if (!videoId && urlObj.pathname.includes('/embed/')) {
+        videoId = urlObj.pathname.split('/embed/')[1]?.split('/')[0]?.split('?')[0] || '';
+      }
+      if (!videoId && (urlObj.hostname === 'youtu.be' || urlObj.pathname.startsWith('/'))) {
+        const pathPart = urlObj.pathname.replace(/^\//, '').split('?')[0].split('/')[0];
+        if (pathPart && pathPart !== 'watch' && pathPart !== 'playlist') {
+          videoId = pathPart;
+        }
+      }
+    } catch {
+      const vMatch = url.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_-]{11})/);
+      if (vMatch) videoId = vMatch[1];
+      const pMatch = url.match(/list=([a-zA-Z0-9_-]+)/);
+      if (pMatch) playlistId = pMatch[1];
     }
 
-    if (videoId) {
-      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`;
+    if (videoId || playlistId) {
+      let embedUrl = '';
+      if (videoId) {
+        // Always prioritize the exact song/video ID so YouTube never redirects to an unrelated radio mix or wrong track
+        embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1`;
+      } else {
+        embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${playlistId}&autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1`;
+      }
+
+      const title =
+        customTitle ||
+        (playlistId && !videoId ? 'YouTube Romantic Playlist' : 'YouTube Music Stream');
+
       return {
         provider: 'youtube',
         embedUrl,
         originalUrl: url,
-        title: customTitle || 'YouTube Romantic Music Stream',
-        subtitle: 'YouTube Music Audio',
+        title,
+        subtitle: playlistId ? 'YouTube Playlist' : 'YouTube Music',
         icon: '▶️',
-        type: 'video',
-        height: 180,
+        type: playlistId ? 'playlist' : 'video',
+        height: 200,
       };
     }
   }
 
   // 4. SoundCloud
   if (url.includes('soundcloud.com')) {
-    const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23f43f5e&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false`;
+    const embedUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(
+      url
+    )}&color=%23f43f5e&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false`;
     return {
       provider: 'soundcloud',
       embedUrl,
@@ -176,9 +221,10 @@ export function parseStreamingUrl(rawUrl: string, customTitle?: string): Streami
 
 /**
  * Curated romantic playlists & soundscapes for instant 1-click couple listening
+ * Designed to be commercial/ad-free or official editorial embeds
  */
 export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
-  // Spotify Presets
+  // Spotify Official Presets
   {
     provider: 'spotify',
     originalUrl: 'https://open.spotify.com/playlist/37i9dQZF1DX50oq6vV7x2S',
@@ -217,10 +263,10 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     subtitle: 'Spotify Single • Iconic timeless love ballad',
     icon: '🟢',
     type: 'track',
-    height: 80,
+    height: 152,
   },
 
-  // Apple Music Presets
+  // Apple Music Official Presets
   {
     provider: 'apple-music',
     originalUrl: 'https://music.apple.com/us/playlist/romantic-essentials/pl.b7952a265691461db1d7ad9989b1da98',
@@ -242,25 +288,25 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     height: 152,
   },
 
-  // YouTube Live / Ambient Presets
+  // YouTube Live & Ad-Free Continuous Streams
   {
     provider: 'youtube',
     originalUrl: 'https://www.youtube.com/watch?v=5qap5aO4i9A',
-    embedUrl: 'https://www.youtube-nocookie.com/embed/5qap5aO4i9A?autoplay=1&enablejsapi=1',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/5qap5aO4i9A?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
     title: 'Lofi Girl: Relaxing Romantic Beats',
-    subtitle: 'YouTube Music • Peaceful beats to talk, dream & relax to',
+    subtitle: 'YouTube Live • Peaceful beats to talk, dream & relax to',
     icon: '▶️',
     type: 'video',
-    height: 180,
+    height: 200,
   },
   {
     provider: 'youtube',
     originalUrl: 'https://www.youtube.com/watch?v=DWcJFNfaw9c',
-    embedUrl: 'https://www.youtube-nocookie.com/embed/DWcJFNfaw9c?autoplay=1&enablejsapi=1',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/DWcJFNfaw9c?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
     title: 'Romantic Candlelight Piano',
     subtitle: 'YouTube Music • Beautiful peaceful piano melodies for couples',
     icon: '▶️',
     type: 'video',
-    height: 180,
+    height: 200,
   },
 ];
