@@ -179,7 +179,9 @@ export interface VideoSignalData {
     | 'call-end'
     | 'romantic-reaction'
     | 'touch-heart'
-    | 'theme-sync';
+    | 'theme-sync'
+    | 'screen-share-sync'
+    | 'music-sync';
   callerRole?: UserRole;
   callerName?: string;
   callerPeerId?: string;
@@ -194,6 +196,14 @@ export interface VideoSignalData {
   x?: number;
   y?: number;
   touchActive?: boolean;
+  isScreenSharing?: boolean;
+  sharerRole?: UserRole;
+  sharerName?: string;
+  musicTrackId?: string;
+  musicPlaying?: boolean;
+  musicVolume?: number;
+  customSongUrl?: string;
+  customSongTitle?: string;
   sentAt?: number;
 }
 
@@ -330,6 +340,11 @@ type CallStateListener = (state: {
   activeFilter: RomanticFilterId;
   partnerTouchingHeart: boolean;
   iceConnectionState: string;
+  isScreenSharing: boolean;
+  partnerScreenSharing: boolean;
+  screenStream: MediaStream | null;
+  screenSharerRole?: UserRole;
+  screenSharerName?: string;
 }) => void;
 
 type ReactionListener = (reaction: { id: string; emoji: string; x: number; y: number; senderRole?: UserRole }) => void;
@@ -337,6 +352,22 @@ type ReactionListener = (reaction: { id: string; emoji: string; x: number; y: nu
 export type ThemeSyncListener = (info: {
   themeId?: RomanticThemeId;
   filterId?: RomanticFilterId;
+  senderName?: string;
+  senderRole?: UserRole;
+}) => void;
+
+export type ScreenShareListener = (info: {
+  isScreenSharing: boolean;
+  sharerRole?: UserRole;
+  sharerName?: string;
+}) => void;
+
+export type MusicSyncListener = (info: {
+  trackId?: string;
+  isPlaying?: boolean;
+  volume?: number;
+  customUrl?: string;
+  customTitle?: string;
   senderName?: string;
   senderRole?: UserRole;
 }) => void;
@@ -381,10 +412,17 @@ class RomanticVideoCallService {
   public activeTheme: RomanticThemeId = getInitialTheme();
   public activeFilter: RomanticFilterId = getInitialFilter();
   public partnerTouchingHeart: boolean = false;
+  public isScreenSharing: boolean = false;
+  public partnerScreenSharing: boolean = false;
+  public screenStream: MediaStream | null = null;
+  public screenSharerRole?: UserRole;
+  public screenSharerName?: string;
 
   private stateListeners: Set<CallStateListener> = new Set();
   private reactionListeners: Set<ReactionListener> = new Set();
   private themeSyncListeners: Set<ThemeSyncListener> = new Set();
+  private screenShareListeners: Set<ScreenShareListener> = new Set();
+  private musicSyncListeners: Set<MusicSyncListener> = new Set();
 
   constructor() {
     this.setupSignalingListener();
@@ -407,6 +445,11 @@ class RomanticVideoCallService {
       activeFilter: this.activeFilter,
       partnerTouchingHeart: this.partnerTouchingHeart,
       iceConnectionState: this.iceConnectionState,
+      isScreenSharing: this.isScreenSharing,
+      partnerScreenSharing: this.partnerScreenSharing,
+      screenStream: this.screenStream,
+      screenSharerRole: this.screenSharerRole,
+      screenSharerName: this.screenSharerName,
     };
     this.stateListeners.forEach((l) => l(snapshot));
   }
@@ -425,6 +468,11 @@ class RomanticVideoCallService {
       activeFilter: this.activeFilter,
       partnerTouchingHeart: this.partnerTouchingHeart,
       iceConnectionState: this.iceConnectionState,
+      isScreenSharing: this.isScreenSharing,
+      partnerScreenSharing: this.partnerScreenSharing,
+      screenStream: this.screenStream,
+      screenSharerRole: this.screenSharerRole,
+      screenSharerName: this.screenSharerName,
     });
     return () => this.stateListeners.delete(listener);
   }
@@ -437,6 +485,16 @@ class RomanticVideoCallService {
   public onThemeSync(listener: ThemeSyncListener): () => void {
     this.themeSyncListeners.add(listener);
     return () => this.themeSyncListeners.delete(listener);
+  }
+
+  public onScreenShare(listener: ScreenShareListener): () => void {
+    this.screenShareListeners.add(listener);
+    return () => this.screenShareListeners.delete(listener);
+  }
+
+  public onMusicSync(listener: MusicSyncListener): () => void {
+    this.musicSyncListeners.add(listener);
+    return () => this.musicSyncListeners.delete(listener);
   }
 
   public setMyRole(role: UserRole) {
@@ -879,6 +937,18 @@ class RomanticVideoCallService {
     this.remoteStream = null;
     this.status = 'idle';
     this.partnerTouchingHeart = false;
+
+    if (this.isScreenSharing) {
+      if (this.screenStream) {
+        this.screenStream.getTracks().forEach((t) => t.stop());
+        this.screenStream = null;
+      }
+      this.isScreenSharing = false;
+    }
+    this.partnerScreenSharing = false;
+    this.screenSharerRole = undefined;
+    this.screenSharerName = undefined;
+
     this.notify();
 
     if (notifyRemote) {
@@ -1002,6 +1072,38 @@ class RomanticVideoCallService {
       return;
     }
 
+    // 6. Screen share state sync
+    if (data.signalType === 'screen-share-sync') {
+      this.partnerScreenSharing = Boolean(data.isScreenSharing);
+      this.screenSharerRole = data.sharerRole;
+      this.screenSharerName = data.sharerName;
+      this.notify();
+      this.screenShareListeners.forEach((l) =>
+        l({
+          isScreenSharing: Boolean(data.isScreenSharing),
+          sharerRole: data.sharerRole,
+          sharerName: data.sharerName || senderName,
+        })
+      );
+      return;
+    }
+
+    // 7. Synchronized romantic music
+    if (data.signalType === 'music-sync') {
+      this.musicSyncListeners.forEach((l) =>
+        l({
+          trackId: data.musicTrackId,
+          isPlaying: data.musicPlaying,
+          volume: data.musicVolume,
+          customUrl: data.customSongUrl,
+          customTitle: data.customSongTitle,
+          senderName: senderName || 'Your Love',
+          senderRole,
+        })
+      );
+      return;
+    }
+
     // Mismatched session check for active calls (call-accept / call-decline)
     if (this.currentCallId && data.callId && data.callId !== this.currentCallId) {
       return;
@@ -1109,6 +1211,137 @@ class RomanticVideoCallService {
       signalType: 'touch-heart',
       touchActive: active,
     }, senderRole);
+  }
+
+  // Start Screen Sharing
+  public async startScreenShare(): Promise<boolean> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      throw new Error('Screen sharing is not supported on this browser or platform.');
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' } as any,
+        audio: true,
+      });
+
+      const screenVideoTrack = stream.getVideoTracks()[0];
+      if (!screenVideoTrack) return false;
+
+      this.screenStream = stream;
+      this.isScreenSharing = true;
+
+      // When user clicks the browser's native "Stop sharing" bar
+      screenVideoTrack.onended = () => {
+        this.stopScreenShare();
+      };
+
+      // Replace video sender track on active RTCPeerConnection
+      if (this.activeCall) {
+        const pc = (this.activeCall.peerConnection || this.activeCall._peerConnection) as RTCPeerConnection | undefined;
+        if (pc) {
+          const senders = pc.getSenders();
+          const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
+          if (videoSender) {
+            await videoSender.replaceTrack(screenVideoTrack);
+          }
+          // Mix/forward screen audio if user shared tab/system audio
+          const screenAudioTrack = stream.getAudioTracks()[0];
+          if (screenAudioTrack) {
+            const audioSender = senders.find((s) => s.track && s.track.kind === 'audio');
+            if (audioSender) {
+              await audioSender.replaceTrack(screenAudioTrack);
+            }
+          }
+        }
+      }
+
+      await this.sendSignal(
+        {
+          signalType: 'screen-share-sync',
+          isScreenSharing: true,
+          sharerRole: this.myRole,
+          sharerName: this.callerName,
+        },
+        this.myRole,
+        this.callerName
+      );
+
+      this.notify();
+      return true;
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+        return false;
+      }
+      console.warn('Screen share start failed:', err);
+      throw err;
+    }
+  }
+
+  // Stop Screen Sharing & restore camera and mic
+  public async stopScreenShare(): Promise<void> {
+    if (!this.isScreenSharing && !this.screenStream) return;
+
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((track) => track.stop());
+      this.screenStream = null;
+    }
+    this.isScreenSharing = false;
+
+    // Restore camera and mic tracks on active RTCPeerConnection
+    if (this.activeCall && this.localStream) {
+      const pc = (this.activeCall.peerConnection || this.activeCall._peerConnection) as RTCPeerConnection | undefined;
+      if (pc) {
+        const senders = pc.getSenders();
+        const cameraTrack = this.localStream.getVideoTracks()[0];
+        const micTrack = this.localStream.getAudioTracks()[0];
+        const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
+        const audioSender = senders.find((s) => s.track && s.track.kind === 'audio');
+        if (videoSender && cameraTrack) {
+          await videoSender.replaceTrack(cameraTrack);
+        }
+        if (audioSender && micTrack) {
+          await audioSender.replaceTrack(micTrack);
+        }
+      }
+    }
+
+    await this.sendSignal(
+      {
+        signalType: 'screen-share-sync',
+        isScreenSharing: false,
+        sharerRole: this.myRole,
+        sharerName: this.callerName,
+      },
+      this.myRole,
+      this.callerName
+    );
+
+    this.notify();
+  }
+
+  // Synchronize romantic background music across both devices
+  public async syncMusic(data: {
+    trackId: string;
+    isPlaying: boolean;
+    volume?: number;
+    customUrl?: string;
+    customTitle?: string;
+    senderRole?: UserRole;
+    senderName?: string;
+  }) {
+    await this.sendSignal(
+      {
+        signalType: 'music-sync',
+        musicTrackId: data.trackId,
+        musicPlaying: data.isPlaying,
+        musicVolume: data.volume,
+        customSongUrl: data.customUrl,
+        customSongTitle: data.customTitle,
+      },
+      data.senderRole || this.myRole,
+      data.senderName
+    );
   }
 }
 

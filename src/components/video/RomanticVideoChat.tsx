@@ -9,7 +9,7 @@ import {
   getMeteredCredentials,
   setMeteredCredentials,
 } from '../../utils/webrtc';
-import { romanticMusic } from '../../utils/romanticMusic';
+import { romanticMusic, ROMANTIC_TRACKS, RomanticTrack } from '../../utils/romanticMusic';
 import { soundFx } from '../../utils/audio';
 import confetti from 'canvas-confetti';
 import {
@@ -25,12 +25,27 @@ import {
   Wand2,
   Volume2,
   VolumeX,
+  Volume1,
   Columns,
   ChevronLeft,
   Check,
   Globe,
   Settings,
   X,
+  ScreenShare,
+  ScreenShareOff,
+  Monitor,
+  MonitorUp,
+  Music,
+  Disc,
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  Sliders,
+  Upload,
+  Radio,
+  Headphones,
 } from 'lucide-react';
 
 const ROMANTIC_EMOJIS = [
@@ -592,7 +607,17 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [viewMode, setViewMode] = useState<'pip' | 'split'>('split');
   const [showThemes, setShowThemes] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [musicPlaying, setMusicPlaying] = useState(true);
+  const [musicPlaying, setMusicPlaying] = useState(romanticMusic.getIsPlaying());
+  const [activeMusicTrackId, setActiveMusicTrackId] = useState(romanticMusic.getActiveTrackId());
+  const [musicVolume, setMusicVolume] = useState(romanticMusic.getVolume());
+  const [showMusicModal, setShowMusicModal] = useState(false);
+  const [musicActiveTab, setMusicActiveTab] = useState<'tracks' | 'custom'>('tracks');
+  const [customSongInput, setCustomSongInput] = useState('');
+  const [customSongTitleInput, setCustomSongTitleInput] = useState('');
+  const [isScreenSharing, setIsScreenSharing] = useState(videoCallService.isScreenSharing);
+  const [partnerScreenSharing, setPartnerScreenSharing] = useState(videoCallService.partnerScreenSharing);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(videoCallService.screenStream);
+  const [screenSharerName, setScreenSharerName] = useState<string>('');
   const [callDuration, setCallDuration] = useState(0);
   const [reactions, setReactions] = useState<{ id: string; emoji: string; x: number; y: number }[]>([]);
   const [touchingHeart, setTouchingHeart] = useState(false);
@@ -615,7 +640,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     videoCallService.setMyRole(profile.currentUserRole);
   }, [profile.currentUserRole]);
 
-  // Subscribe to call state changes and bidirectional theme-sync
+  // Subscribe to call state changes, screen sharing, music, and bidirectional theme-sync
   useEffect(() => {
     const unsubState = videoCallService.onStateChange((state) => {
       setCallStatus(state.status);
@@ -626,6 +651,10 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       setActiveTheme(state.activeTheme);
       setActiveFilter(state.activeFilter);
       setPartnerTouching(state.partnerTouchingHeart);
+      setIsScreenSharing(state.isScreenSharing);
+      setPartnerScreenSharing(state.partnerScreenSharing);
+      setScreenStream(state.screenStream);
+      setScreenSharerName(state.screenSharerName || '');
       if (state.iceConnectionState) setIceState(state.iceConnectionState);
     });
 
@@ -680,32 +709,99 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       }
     });
 
+    // Screen sharing sync listener from partner
+    const unsubScreenShare = videoCallService.onScreenShare((info) => {
+      setIsScreenSharing(info.isScreenSharing);
+      setPartnerScreenSharing(info.isScreenSharing);
+      if (info.sharerName) setScreenSharerName(info.sharerName);
+      const sender = info.sharerName || partnerName || 'Your Partner';
+      setSyncToast({
+        message: info.isScreenSharing
+          ? `${sender} started sharing their screen 🖥️`
+          : `${sender} stopped sharing screen ⏹️`,
+        icon: '🖥️',
+      });
+      setTimeout(() => setSyncToast(null), 4000);
+      soundFx.playPop(info.isScreenSharing ? 720 : 480, 0.08);
+      if (info.isScreenSharing) {
+        confetti({
+          particleCount: 25,
+          spread: 50,
+          origin: { y: 0.25 },
+          colors: ['#38bdf8', '#818cf8', '#c084fc'],
+        });
+      }
+    });
+
+    // Synchronized romantic music listener from partner
+    const unsubMusicSync = videoCallService.onMusicSync((info) => {
+      if (info.trackId) {
+        setActiveMusicTrackId(info.trackId);
+        if (info.trackId === 'custom-song' && info.customUrl) {
+          romanticMusic.playCustomAudio(info.customUrl, info.customTitle);
+        } else {
+          romanticMusic.playTrack(info.trackId);
+        }
+      }
+      if (info.volume !== undefined) {
+        romanticMusic.setVolume(info.volume);
+        setMusicVolume(info.volume);
+      }
+      if (info.isPlaying !== undefined) {
+        setMusicPlaying(info.isPlaying);
+        if (info.isPlaying) romanticMusic.resume();
+        else romanticMusic.pause();
+      }
+
+      const sender = info.senderName || partnerName || 'Your Love';
+      const trk = ROMANTIC_TRACKS.find((t) => t.id === info.trackId);
+      const title = trk ? trk.title : info.customTitle || 'Romantic Ambience';
+      setSyncToast({
+        message: info.isPlaying
+          ? `${sender} played ${title} 🎶`
+          : `${sender} paused the music ⏸️`,
+        icon: trk ? trk.icon : '🎵',
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+      soundFx.playPop(680, 0.08);
+    });
+
+    const unsubTrackChange = romanticMusic.onTrackChange((s) => {
+      setActiveMusicTrackId(s.activeTrackId);
+      setMusicPlaying(s.isPlaying);
+      setMusicVolume(s.volume);
+    });
+
     return () => {
       unsubState();
       unsubReaction();
       unsubThemeSync();
+      unsubScreenShare();
+      unsubMusicSync();
+      unsubTrackChange();
     };
   }, [partnerName]);
 
-  // Attach local media stream to video tags
+  // Attach local media stream or screen stream to video tags
   useEffect(() => {
+    const streamToUse = isScreenSharing && screenStream ? screenStream : localStream;
     if (localVideoRef.current) {
-      if (localStream && !isVideoOff) {
-        localVideoRef.current.srcObject = localStream;
+      if (streamToUse && (!isVideoOff || isScreenSharing)) {
+        localVideoRef.current.srcObject = streamToUse;
         localVideoRef.current.play().catch((err) => console.log('Autoplay local stream:', err));
       } else {
         localVideoRef.current.srcObject = null;
       }
     }
     if (pipVideoRef.current) {
-      if (localStream && !isVideoOff) {
-        pipVideoRef.current.srcObject = localStream;
+      if (streamToUse && (!isVideoOff || isScreenSharing)) {
+        pipVideoRef.current.srcObject = streamToUse;
         pipVideoRef.current.play().catch((err) => console.log('Autoplay pip stream:', err));
       } else {
         pipVideoRef.current.srcObject = null;
       }
     }
-  }, [localStream, isVideoOff, callStatus, viewMode]);
+  }, [localStream, screenStream, isScreenSharing, isVideoOff, callStatus, viewMode]);
 
   // Attach remote stream to video and dedicated audio elements
   useEffect(() => {
@@ -851,14 +947,160 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     videoCallService.sendReaction(emoji, x, y, profile.currentUserRole);
   };
 
-  const handleToggleMusic = () => {
-    if (musicPlaying) {
-      romanticMusic.stopRomanticAmbience();
-      setMusicPlaying(false);
-    } else {
-      romanticMusic.startRomanticAmbience(0.2);
-      setMusicPlaying(true);
+  const handleToggleScreenShare = async () => {
+    try {
+      setPermissionError(null);
+      if (isScreenSharing) {
+        await videoCallService.stopScreenShare();
+        soundFx.playPop(520, 0.08);
+      } else {
+        const ok = await videoCallService.startScreenShare();
+        if (ok) {
+          soundFx.playPop(750, 0.08);
+          confetti({
+            particleCount: 20,
+            spread: 50,
+            origin: { y: 0.3 },
+            colors: ['#38bdf8', '#818cf8', '#c084fc'],
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn('Screen share error:', err);
+      setPermissionError('Could not share screen: ' + (err.message || 'Permission denied'));
+      setTimeout(() => setPermissionError(null), 5000);
     }
+  };
+
+  const handleSelectTrack = (trackId: string) => {
+    romanticMusic.playTrack(trackId);
+    setActiveMusicTrackId(trackId);
+    setMusicPlaying(true);
+    videoCallService.syncMusic({
+      trackId,
+      isPlaying: true,
+      volume: romanticMusic.getVolume(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    const trk = ROMANTIC_TRACKS.find((t) => t.id === trackId);
+    if (trk) {
+      setSyncToast({
+        message: `Playing "${trk.title}" for both of you!`,
+        icon: trk.icon,
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+      soundFx.playPop(700, 0.08);
+    }
+  };
+
+  const handleToggleMusicPlay = () => {
+    romanticMusic.togglePlay();
+    const nextPlaying = romanticMusic.getIsPlaying();
+    setMusicPlaying(nextPlaying);
+    videoCallService.syncMusic({
+      trackId: romanticMusic.getActiveTrackId(),
+      isPlaying: nextPlaying,
+      volume: romanticMusic.getVolume(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: nextPlaying ? 'Resumed background music for both!' : 'Paused background music for both',
+      icon: nextPlaying ? '🎶' : '⏸️',
+    });
+    setTimeout(() => setSyncToast(null), 2500);
+  };
+
+  const handleNextMusicTrack = () => {
+    romanticMusic.nextTrack();
+    const trk = romanticMusic.getActiveTrack();
+    setActiveMusicTrackId(trk.id);
+    setMusicPlaying(true);
+    videoCallService.syncMusic({
+      trackId: trk.id,
+      isPlaying: true,
+      volume: romanticMusic.getVolume(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: `Switched to ${trk.title} for both!`,
+      icon: trk.icon,
+    });
+    setTimeout(() => setSyncToast(null), 3000);
+  };
+
+  const handlePrevMusicTrack = () => {
+    romanticMusic.previousTrack();
+    const trk = romanticMusic.getActiveTrack();
+    setActiveMusicTrackId(trk.id);
+    setMusicPlaying(true);
+    videoCallService.syncMusic({
+      trackId: trk.id,
+      isPlaying: true,
+      volume: romanticMusic.getVolume(),
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: `Switched to ${trk.title} for both!`,
+      icon: trk.icon,
+    });
+    setTimeout(() => setSyncToast(null), 3000);
+  };
+
+  const handleVolumeChange = (vol: number) => {
+    setMusicVolume(vol);
+    romanticMusic.setVolume(vol);
+  };
+
+  const handlePlayCustomSong = () => {
+    if (!customSongInput.trim()) return;
+    const title = customSongTitleInput.trim() || 'Our Special Song';
+    romanticMusic.playCustomAudio(customSongInput.trim(), title);
+    setActiveMusicTrackId('custom-song');
+    setMusicPlaying(true);
+    videoCallService.syncMusic({
+      trackId: 'custom-song',
+      isPlaying: true,
+      volume: romanticMusic.getVolume(),
+      customUrl: customSongInput.trim(),
+      customTitle: title,
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: `Playing "${title}" for both of you!`,
+      icon: '💖',
+    });
+    setTimeout(() => setSyncToast(null), 3500);
+  };
+
+  const handleUploadCustomAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fileUrl = URL.createObjectURL(file);
+    const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
+    setCustomSongInput(fileUrl);
+    setCustomSongTitleInput(cleanTitle);
+    romanticMusic.playCustomAudio(fileUrl, cleanTitle);
+    setActiveMusicTrackId('custom-song');
+    setMusicPlaying(true);
+    videoCallService.syncMusic({
+      trackId: 'custom-song',
+      isPlaying: true,
+      volume: romanticMusic.getVolume(),
+      customUrl: fileUrl,
+      customTitle: cleanTitle,
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: `Loaded & playing "${cleanTitle}" for both!`,
+      icon: '💖',
+    });
+    setTimeout(() => setSyncToast(null), 3500);
   };
 
   const handleTouchHeartStart = () => {
@@ -881,6 +1123,18 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const currentThemeConfig = ROMANTIC_THEMES.find((t) => t.id === activeTheme) || ROMANTIC_THEMES[0];
   const currentFilterConfig = ROMANTIC_FILTERS.find((f) => f.id === activeFilter) || ROMANTIC_FILTERS[0];
+  const currentTrackConfig = ROMANTIC_TRACKS.find((t) => t.id === activeMusicTrackId) || {
+    id: 'custom-song',
+    title: customSongTitleInput || 'Our Special Song',
+    subtitle: 'Custom couple track',
+    genre: 'Couple Choice',
+    icon: '💖',
+    duration: 'Streaming',
+    bpm: 72,
+    description: 'Your shared personal song playing softly in the background.',
+    gradient: 'from-pink-900 via-rose-900 to-purple-950',
+    glowColor: 'rgba(244, 63, 94, 0.45)',
+  };
 
   return (
     <div className={`relative w-full rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 bg-gradient-to-br ${currentThemeConfig.gradient} min-h-[580px] md:min-h-[640px] flex flex-col justify-between border-2 ${currentThemeConfig.accentBorder} select-none`}>
@@ -1099,13 +1353,15 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         </div>
 
         {/* Right Quick Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Background Theme Selector Toggle */}
           <button
             type="button"
             onClick={() => {
               setShowThemes((v) => !v);
               setShowFilters(false);
+              setShowMusicModal(false);
+              setShowNetworkSettings(false);
             }}
             title="Choose Romantic Atmosphere (Syncs for both)"
             className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white transition active:scale-95 border border-white/20 flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer"
@@ -1120,6 +1376,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             onClick={() => {
               setShowFilters((v) => !v);
               setShowThemes(false);
+              setShowMusicModal(false);
+              setShowNetworkSettings(false);
             }}
             title="Flattering Video Filter (Syncs for both)"
             className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white transition active:scale-95 border border-white/20 flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer"
@@ -1128,6 +1386,50 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             <span className="hidden sm:inline">Filter</span>
           </button>
 
+          {/* Romantic Jukebox / Music Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowMusicModal((v) => !v);
+              setShowThemes(false);
+              setShowFilters(false);
+              setShowNetworkSettings(false);
+            }}
+            title="Romantic Music Jukebox (Listen together while talking)"
+            className={`px-2.5 py-1.5 rounded-xl transition active:scale-95 border flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer ${
+              musicPlaying
+                ? 'bg-rose-500/30 hover:bg-rose-500/40 text-rose-200 border-rose-400/50 ring-2 ring-rose-400/30'
+                : 'bg-white/15 hover:bg-white/25 text-white border-white/20'
+            }`}
+          >
+            <Disc className={`w-4 h-4 ${musicPlaying ? 'text-pink-400 animate-spin' : 'text-pink-300'}`} />
+            <span className="hidden sm:inline">Music</span>
+            {musicPlaying && (
+              <span className="flex items-center gap-0.5 ml-0.5">
+                <span className="w-1 h-2.5 bg-rose-400 animate-pulse rounded-full" />
+                <span className="w-1 h-3.5 bg-pink-400 animate-pulse rounded-full delay-75" />
+                <span className="w-1 h-2 bg-rose-300 animate-pulse rounded-full delay-150" />
+              </span>
+            )}
+          </button>
+
+          {/* Screen Share Quick Button (During Active Call) */}
+          {callStatus !== 'idle' && (
+            <button
+              type="button"
+              onClick={handleToggleScreenShare}
+              title={isScreenSharing ? 'Stop sharing screen' : 'Share screen (Watch movies, photos, apps together)'}
+              className={`px-2.5 py-1.5 rounded-xl transition active:scale-95 border flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer ${
+                isScreenSharing
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-400/50 ring-2 ring-indigo-400/50 animate-pulse'
+                  : 'bg-white/15 hover:bg-white/25 text-white border-white/20'
+              }`}
+            >
+              {isScreenSharing ? <ScreenShareOff className="w-4 h-4 text-white" /> : <MonitorUp className="w-4 h-4 text-indigo-300" />}
+              <span className="hidden sm:inline">{isScreenSharing ? 'Sharing' : 'Share'}</span>
+            </button>
+          )}
+
           {/* Global Network / TURN Status Toggle */}
           <button
             type="button"
@@ -1135,6 +1437,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
               setShowNetworkSettings((v) => !v);
               setShowThemes(false);
               setShowFilters(false);
+              setShowMusicModal(false);
             }}
             title="Global Network & TURN Relay Settings"
             className={`px-2.5 py-1.5 rounded-xl transition active:scale-95 border flex items-center gap-1.5 text-xs font-bold shadow-md cursor-pointer ${
@@ -1150,11 +1453,11 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             <span className={`w-1.5 h-1.5 rounded-full ${iceState === 'connected' ? 'bg-emerald-400' : iceState === 'failed' ? 'bg-rose-500' : 'bg-amber-400'}`} />
           </button>
 
-          {/* Ambient Romantic Harmony Sound Toggle */}
+          {/* Quick Play/Pause Background Music */}
           <button
             type="button"
-            onClick={handleToggleMusic}
-            title={musicPlaying ? 'Mute romantic ambient music' : 'Play romantic ambient music'}
+            onClick={handleToggleMusicPlay}
+            title={musicPlaying ? 'Pause background music' : 'Play background music'}
             className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition active:scale-95 border border-white/15"
           >
             {musicPlaying ? <Volume2 className="w-4 h-4 text-rose-300" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
@@ -1373,6 +1676,267 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         </div>
       )}
 
+      {/* ================= ROMANTIC JUKEBOX & MUSIC PLAYER MODAL ================= */}
+      {showMusicModal && (
+        <div className="absolute top-16 right-4 sm:right-16 z-50 w-88 max-w-[92vw] rounded-2xl bg-slate-900/95 p-4 border border-rose-400/50 shadow-2xl backdrop-blur-xl text-white animate-fade-in max-h-[82vh] overflow-y-auto">
+          <div className="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 shadow-md">
+                <Music className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                  Couple Jukebox 🎶
+                </h3>
+                <p className="text-[10px] text-slate-300">Synchronized background audio while talking</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMusicModal(false)}
+              className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Now Playing Mini-Banner inside modal */}
+          <div className="p-3 rounded-xl bg-gradient-to-r from-rose-950/60 via-purple-950/60 to-slate-900/80 border border-rose-500/30 mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className={`text-2xl p-2 rounded-xl bg-black/40 shrink-0 ${musicPlaying ? 'animate-pulse' : ''}`}>
+                {currentTrackConfig.icon}
+              </span>
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold text-white truncate flex items-center gap-1.5">
+                  <span>{currentTrackConfig.title}</span>
+                  {musicPlaying && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                  )}
+                </div>
+                <div className="text-[10px] text-rose-200/80 font-medium truncate">
+                  {currentTrackConfig.genre} • {musicPlaying ? 'Playing for both' : 'Paused'}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Play/Pause button */}
+            <button
+              type="button"
+              onClick={handleToggleMusicPlay}
+              className={`p-2.5 rounded-full transition active:scale-95 shrink-0 cursor-pointer ${
+                musicPlaying
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-400/40'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              }`}
+            >
+              {musicPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
+            </button>
+          </div>
+
+          {/* Tabs: Romantic Soundscapes vs Custom Song */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-black/40 border border-white/10 mb-3">
+            <button
+              type="button"
+              onClick={() => setMusicActiveTab('tracks')}
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                musicActiveTab === 'tracks'
+                  ? 'bg-rose-500 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>🎹 Soundscapes ({ROMANTIC_TRACKS.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMusicActiveTab('custom')}
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                musicActiveTab === 'custom'
+                  ? 'bg-rose-500 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>💖 Our Song</span>
+            </button>
+          </div>
+
+          {/* TAB 1: Soundscapes list */}
+          {musicActiveTab === 'tracks' && (
+            <div className="space-y-2 mb-4">
+              {ROMANTIC_TRACKS.map((track) => {
+                const isSelected = activeMusicTrackId === track.id;
+                const isThisPlaying = isSelected && musicPlaying;
+                return (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => handleSelectTrack(track.id)}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-rose-500/30 border-2 border-rose-400 ring-2 ring-rose-400/40 shadow-lg'
+                        : 'bg-white/5 hover:bg-white/15 border border-white/10'
+                    }`}
+                  >
+                    <span className="text-2xl p-2 rounded-xl bg-black/40 shrink-0">
+                      {track.icon}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="text-xs font-extrabold text-white truncate">{track.title}</div>
+                        {isSelected && (
+                          <span className="text-[10px] text-rose-300 font-bold flex items-center gap-1 shrink-0">
+                            {isThisPlaying ? (
+                              <>
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                <span>Playing</span>
+                              </>
+                            ) : (
+                              <span>Selected</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-rose-200/70 font-semibold flex items-center gap-2">
+                        <span>{track.genre}</span>
+                        <span>•</span>
+                        <span>{track.duration}</span>
+                        {track.bpm && (
+                          <>
+                            <span>•</span>
+                            <span>{track.bpm} BPM</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400 line-clamp-1">{track.description}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* TAB 2: Custom Song / Audio */}
+          {musicActiveTab === 'custom' && (
+            <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-3 mb-4 text-xs">
+              <div>
+                <div className="font-extrabold text-white flex items-center gap-1.5 mb-1">
+                  <Heart className="w-3.5 h-3.5 fill-rose-400 text-rose-400" />
+                  <span>Play "Our Special Song"</span>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-relaxed">
+                  Stream your favorite song together or upload an MP3/audio file from your device.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-300 font-semibold block">Song Title (e.g. "Perfect - Ed Sheeran"):</label>
+                <input
+                  type="text"
+                  value={customSongTitleInput}
+                  onChange={(e) => setCustomSongTitleInput(e.target.value)}
+                  placeholder="Song Title"
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/20 text-white text-xs focus:outline-none focus:border-rose-400"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-300 font-semibold block">Audio URL (Direct MP3, M4A, Stream):</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={customSongInput}
+                    onChange={(e) => setCustomSongInput(e.target.value)}
+                    placeholder="https://example.com/our-song.mp3"
+                    className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/20 text-white text-xs focus:outline-none focus:border-rose-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePlayCustomSong}
+                    disabled={!customSongInput.trim()}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer"
+                  >
+                    Play
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/10">
+                <label className="text-[10px] text-slate-300 font-semibold block mb-1.5">Or Upload from Device:</label>
+                <label className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-dashed border-white/30 text-white text-xs font-semibold cursor-pointer transition">
+                  <Upload className="w-4 h-4 text-pink-300" />
+                  <span>Choose MP3 or Audio file</span>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleUploadCustomAudio}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Volume Control Slider */}
+          <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-rose-300" />
+                <span>Background Volume:</span>
+              </span>
+              <span className="text-rose-300 font-extrabold">{Math.round(musicVolume * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={musicVolume}
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+              className="w-full accent-rose-500 cursor-pointer"
+            />
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <button
+                type="button"
+                onClick={() => handleVolumeChange(0.12)}
+                className="hover:text-rose-300 transition"
+              >
+                Whisper 12%
+              </button>
+              <button
+                type="button"
+                onClick={() => handleVolumeChange(0.22)}
+                className="text-rose-300 font-bold hover:underline"
+              >
+                Cozy 22% (Talk mode)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleVolumeChange(0.40)}
+                className="hover:text-rose-300 transition"
+              >
+                Cinema 40%
+              </button>
+            </div>
+            <p className="text-[9px] text-slate-400 italic text-center">
+              Cozy volume allows you and {partnerName} to talk clearly with romantic background melodies.
+            </p>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-[10px] text-rose-200/80 px-1">
+            <span className="flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-300" />
+              <span>Realtime Synced for Both</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowMusicModal(false)}
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ================= FLOATING FLYING EMOJIS & KISSES ================= */}
       <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
         {reactions.map((r) => (
@@ -1484,12 +2048,22 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       remoteVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: currentFilterConfig.cssFilter }}
-                    className={`w-full h-full object-cover transition-opacity duration-300 ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
+                    className={`w-full h-full transition-opacity duration-300 ${
+                      partnerScreenSharing ? 'object-contain bg-black' : 'object-cover'
+                    } ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
                   />
                   {remoteStream && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
                   {remoteStream && <FilterOverlayEffect filterId={activeFilter} />}
+
+                  {/* Partner Screen Sharing Banner */}
+                  {partnerScreenSharing && (
+                    <div className="absolute top-3 left-3 z-30 px-3 py-1.5 rounded-full bg-indigo-600/90 text-white text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md border border-indigo-400/50">
+                      <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
+                      <span>{partnerName}'s Shared Screen 🖥️</span>
+                    </div>
+                  )}
 
                   {!remoteStream && (
                     /* Waiting / Ringing Placeholder */
@@ -1540,12 +2114,29 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       localVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: currentFilterConfig.cssFilter }}
-                    className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
+                    className={`w-full h-full transition-opacity duration-300 ${
+                      isScreenSharing ? 'object-contain bg-black' : 'object-cover -scale-x-100'
+                    } ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
                   />
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
                   {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} />}
+
+                  {/* Self Screen Sharing Banner */}
+                  {isScreenSharing && (
+                    <div className="absolute top-3 left-3 z-30 px-3 py-1.5 rounded-full bg-indigo-600/90 text-white text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md border border-indigo-400/50">
+                      <MonitorUp className="w-4 h-4 text-amber-300 animate-pulse" />
+                      <span>Sharing Screen 🖥️</span>
+                      <button
+                        type="button"
+                        onClick={handleToggleScreenShare}
+                        className="ml-1.5 px-2 py-0.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-extrabold cursor-pointer transition active:scale-95"
+                      >
+                        Stop
+                      </button>
+                    </div>
+                  )}
 
                   {(!localStream || isVideoOff) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-slate-900/80">
@@ -1577,7 +2168,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   border: `2px solid ${currentFilterConfig.frameGlow}`,
                 }}
               >
-                {/* Main View: Partner */}
+                {/* Main View: Partner (or Partner's shared screen) */}
                 <video
                   ref={remoteVideoRef}
                   autoPlay
@@ -1586,12 +2177,22 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                     remoteVideoRef.current?.play().catch(() => {});
                   }}
                   style={{ filter: currentFilterConfig.cssFilter }}
-                  className={`w-full h-full object-cover transition-opacity duration-300 ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
+                  className={`w-full h-full transition-opacity duration-300 ${
+                    partnerScreenSharing ? 'object-contain bg-black' : 'object-cover'
+                  } ${remoteStream ? 'opacity-100' : 'opacity-0'}`}
                 />
                 {remoteStream && (
                   <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                 )}
                 {remoteStream && <FilterOverlayEffect filterId={activeFilter} />}
+
+                {/* Partner Screen Sharing Banner in PiP view */}
+                {partnerScreenSharing && (
+                  <div className="absolute top-4 left-4 z-30 px-3 py-1.5 rounded-full bg-indigo-600/90 text-white text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-md border border-indigo-400/50">
+                    <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
+                    <span>{partnerName}'s Shared Screen 🖥️</span>
+                  </div>
+                )}
 
                 {!remoteStream && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-black/50">
@@ -1609,12 +2210,14 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 )}
 
                 {/* Main View Filter Badge */}
-                <div className="absolute top-4 left-4 px-3 py-1 rounded-full text-[11px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/60 text-white">
-                  <span>{currentFilterConfig.icon}</span>
-                  <span>{currentFilterConfig.name}</span>
-                </div>
+                {!partnerScreenSharing && (
+                  <div className="absolute top-4 left-4 px-3 py-1 rounded-full text-[11px] font-extrabold shadow-lg backdrop-blur-md flex items-center gap-1.5 border border-white/20 bg-black/60 text-white">
+                    <span>{currentFilterConfig.icon}</span>
+                    <span>{currentFilterConfig.name}</span>
+                  </div>
+                )}
 
-                {/* Floating Self Camera PiP */}
+                {/* Floating Self Camera / Screen PiP */}
                 <div
                   className="absolute top-4 right-4 w-32 h-44 md:w-36 md:h-48 rounded-2xl overflow-hidden shadow-2xl bg-black z-20"
                   style={{
@@ -1631,12 +2234,21 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                       pipVideoRef.current?.play().catch(() => {});
                     }}
                     style={{ filter: currentFilterConfig.cssFilter }}
-                    className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
+                    className={`w-full h-full transition-opacity duration-300 ${
+                      isScreenSharing ? 'object-contain bg-black' : 'object-cover -scale-x-100'
+                    } ${localStream && !isVideoOff ? 'opacity-100' : 'opacity-0'}`}
                   />
                   {localStream && !isVideoOff && (
                     <div className={`absolute inset-0 pointer-events-none transition-all ${currentFilterConfig.overlayClass}`} />
                   )}
                   {localStream && !isVideoOff && <FilterOverlayEffect filterId={activeFilter} />}
+
+                  {isScreenSharing && (
+                    <div className="absolute top-1 left-1 z-30 px-1.5 py-0.5 rounded-full bg-indigo-600/90 text-white text-[9px] font-bold flex items-center gap-1">
+                      <MonitorUp className="w-2.5 h-2.5 text-amber-300" />
+                      <span>Sharing</span>
+                    </div>
+                  )}
 
                   {(!localStream || isVideoOff) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-400 text-[10px]">
@@ -1653,6 +2265,110 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           </div>
         )}
       </div>
+
+      {/* ================= NOW PLAYING MINI-JUKEBOX CAPSULE ================= */}
+      {callStatus !== 'idle' && (
+        <div className="relative z-20 px-3 md:px-5 py-2 bg-black/40 backdrop-blur-md border-t border-white/10 flex items-center justify-between gap-2.5 text-white">
+          {/* Track Info (Clickable to open full Jukebox modal) */}
+          <div
+            onClick={() => setShowMusicModal(true)}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-90 transition group"
+            title="Click to open Couple Jukebox"
+          >
+            <div className={`p-2 rounded-xl bg-gradient-to-tr from-pink-600 to-rose-600 text-white shadow-md shrink-0 ${musicPlaying ? 'animate-pulse' : ''}`}>
+              <Disc className={`w-4 h-4 ${musicPlaying ? 'animate-spin' : ''}`} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-extrabold text-white truncate group-hover:text-rose-300 transition">
+                  {currentTrackConfig.title}
+                </span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30 shrink-0">
+                  {currentTrackConfig.icon}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-300 flex items-center gap-1.5">
+                <span>{currentTrackConfig.genre}</span>
+                <span>•</span>
+                <span className="text-emerald-300 font-semibold flex items-center gap-0.5">
+                  <Sparkles className="w-2.5 h-2.5 text-amber-300" /> Synced ⚡
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Player Controls */}
+          <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+            {/* Prev Track */}
+            <button
+              type="button"
+              onClick={handlePrevMusicTrack}
+              title="Previous Track"
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+            >
+              <SkipBack className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Play/Pause */}
+            <button
+              type="button"
+              onClick={handleToggleMusicPlay}
+              title={musicPlaying ? 'Pause synchronized music' : 'Play synchronized music'}
+              className={`p-2 rounded-full transition active:scale-95 cursor-pointer ${
+                musicPlaying
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white ring-2 ring-rose-400/40 shadow-md shadow-rose-500/30'
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              }`}
+            >
+              {musicPlaying ? <Pause className="w-3.5 h-3.5 fill-white" /> : <Play className="w-3.5 h-3.5 fill-white ml-0.5" />}
+            </button>
+
+            {/* Next Track */}
+            <button
+              type="button"
+              onClick={handleNextMusicTrack}
+              title="Next Track"
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Volume slider mini */}
+            <div className="hidden sm:flex items-center gap-1.5 pl-2 border-l border-white/15">
+              <Volume2 className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.02"
+                value={musicVolume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="w-16 md:w-20 accent-rose-500 cursor-pointer h-1"
+                title={`Volume: ${Math.round(musicVolume * 100)}%`}
+              />
+              <span className="text-[10px] text-rose-300 font-bold w-7">
+                {Math.round(musicVolume * 100)}%
+              </span>
+            </div>
+
+            {/* Jukebox Opener Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowMusicModal((v) => !v);
+                setShowThemes(false);
+                setShowFilters(false);
+                setShowNetworkSettings(false);
+              }}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-200 hover:text-white transition text-xs font-bold flex items-center gap-1 cursor-pointer"
+              title="Open full Couple Jukebox"
+            >
+              <Music className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Jukebox</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ================= ROMANTIC EMOJI REACTION QUICK BAR ================= */}
       {callStatus !== 'idle' && (
@@ -1676,7 +2392,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
       {/* ================= BOTTOM IN-CALL CONTROLS BAR ================= */}
       {callStatus !== 'idle' && (
-        <div className="relative z-20 flex items-center justify-center gap-3 md:gap-6 p-4 bg-black/60 backdrop-blur-md border-t border-white/15">
+        <div className="relative z-20 flex items-center justify-center gap-2.5 sm:gap-4 md:gap-6 p-4 bg-black/60 backdrop-blur-md border-t border-white/15">
           {/* Mute Toggle */}
           <button
             type="button"
@@ -1703,6 +2419,39 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             }`}
           >
             {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+          </button>
+
+          {/* Screen Share Toggle */}
+          <button
+            type="button"
+            onClick={handleToggleScreenShare}
+            title={isScreenSharing ? 'Stop sharing screen' : 'Share screen (Watch movies, photos, apps together)'}
+            className={`p-3 md:p-3.5 rounded-full transition shadow-lg active:scale-95 cursor-pointer ${
+              isScreenSharing
+                ? 'bg-indigo-600 text-white ring-4 ring-indigo-400/50 shadow-indigo-600/40 animate-pulse'
+                : 'bg-white/15 hover:bg-white/25 text-white'
+            }`}
+          >
+            {isScreenSharing ? <ScreenShareOff className="w-5 h-5" /> : <MonitorUp className="w-5 h-5 text-indigo-300" />}
+          </button>
+
+          {/* Romantic Jukebox & Music Together Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowMusicModal((v) => !v);
+              setShowThemes(false);
+              setShowFilters(false);
+              setShowNetworkSettings(false);
+            }}
+            title="Romantic Music Jukebox (Listen together)"
+            className={`p-3 md:p-3.5 rounded-full transition shadow-lg active:scale-95 cursor-pointer ${
+              musicPlaying
+                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white ring-4 ring-pink-400/40 shadow-rose-500/30'
+                : 'bg-white/15 hover:bg-white/25 text-white'
+            }`}
+          >
+            <Disc className={`w-5 h-5 ${musicPlaying ? 'animate-spin text-white' : 'text-pink-300'}`} />
           </button>
 
           {/* Soul Heart Connection Hold Button */}
