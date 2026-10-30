@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useCouple } from '../../context/CoupleContext';
 import {
   videoCallService,
@@ -520,6 +520,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamingIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const hasUnlockedAudio = useRef(false);
+  const streamingStartedAt = useRef<number>(Date.now());
   const [showSyncListenPrompt, setShowSyncListenPrompt] = useState(false);
 
   // Set user role on mount
@@ -625,6 +627,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       // 1. If partner played or updated an online streaming track (Spotify / Apple Music / YouTube)
       if (info.streamingEmbedUrl) {
         romanticMusic.pauseForStreaming();
+        if (info.startedAt) {
+          streamingStartedAt.current = info.startedAt;
+        }
         setStreamingTrack({
           provider: (info.streamingProvider as StreamingProvider) || 'spotify',
           embedUrl: info.streamingEmbedUrl,
@@ -637,14 +642,47 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         });
         setMusicPlaying(info.isPlaying ?? true);
         setShowStreamingDock(true);
-        setShowSyncListenPrompt(true);
-        if (streamingIframeRef.current?.contentWindow) {
-          const cmd = (info.isPlaying ?? true) ? 'playVideo' : 'pauseVideo';
-          streamingIframeRef.current.contentWindow.postMessage(
-            JSON.stringify({ event: 'command', func: cmd, args: '' }),
-            '*'
-          );
+
+        const sendIframeCommands = () => {
+          if (streamingIframeRef.current?.contentWindow) {
+            if (info.isPlaying === false) {
+              streamingIframeRef.current.contentWindow.postMessage(
+                JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+                '*'
+              );
+              return;
+            }
+            streamingIframeRef.current.contentWindow.postMessage(
+              JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+              '*'
+            );
+            streamingIframeRef.current.contentWindow.postMessage(
+              JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+              '*'
+            );
+            if (info.startedAt) {
+              const elapsed = Math.max(0, Math.floor((Date.now() - info.startedAt) / 1000));
+              if (elapsed > 1) {
+                streamingIframeRef.current.contentWindow.postMessage(
+                  JSON.stringify({ event: 'command', func: 'seekTo', args: [elapsed, true] }),
+                  '*'
+                );
+              }
+            }
+          }
+        };
+
+        // If audio has already been unlocked on this device, immediately start playing & unmute
+        if (hasUnlockedAudio.current) {
+          setShowSyncListenPrompt(false);
+          // Send commands at multiple intervals to catch player readiness
+          setTimeout(sendIframeCommands, 400);
+          setTimeout(sendIframeCommands, 1200);
+        } else {
+          // If first time receiving streaming music on this device, prompt once to unlock audio
+          setShowSyncListenPrompt(true);
         }
+
         const sender = info.senderName || partnerName || 'Your Love';
         setSyncToast({
           message: `${sender} started streaming "${info.streamingTitle || 'song'}" on ${info.streamingProvider?.toUpperCase()}! 🎶`,
@@ -924,6 +962,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleTapToListenTogether = () => {
+    hasUnlockedAudio.current = true;
     setShowSyncListenPrompt(false);
     romanticMusic.unlockAudio();
     if (streamingIframeRef.current?.contentWindow) {
@@ -935,6 +974,33 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
         '*'
       );
+      const elapsed = Math.max(0, Math.floor((Date.now() - streamingStartedAt.current) / 1000));
+      if (elapsed > 1) {
+        streamingIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'seekTo', args: [elapsed, true] }),
+          '*'
+        );
+      }
+    }
+  };
+
+  const handleIframeLoaded = () => {
+    if (streamingIframeRef.current?.contentWindow && musicPlaying) {
+      streamingIframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+        '*'
+      );
+      streamingIframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+        '*'
+      );
+      const elapsed = Math.max(0, Math.floor((Date.now() - streamingStartedAt.current) / 1000));
+      if (elapsed > 1) {
+        streamingIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'seekTo', args: [elapsed, true] }),
+          '*'
+        );
+      }
     }
   };
 
@@ -957,6 +1023,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         streamingOriginalUrl: streamingTrack.originalUrl,
         streamingTitle: streamingTrack.title,
         streamingSubtitle: streamingTrack.subtitle,
+        startedAt: streamingStartedAt.current,
         senderRole: profile.currentUserRole,
         senderName: currentUserName,
       });
@@ -986,7 +1053,16 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleNextMusicTrack = () => {
-    setStreamingTrack(null);
+    if (streamingTrack) {
+      const presets = ROMANTIC_STREAMING_PRESETS;
+      const curIdx = presets.findIndex(
+        (p) => p.originalUrl === streamingTrack.originalUrl || p.embedUrl === streamingTrack.embedUrl
+      );
+      const nextIdx = curIdx >= 0 ? (curIdx + 1) % presets.length : 0;
+      handleSelectStreamingPreset(presets[nextIdx]);
+      return;
+    }
+
     romanticMusic.nextTrack();
     const trk = romanticMusic.getActiveTrack();
     setActiveMusicTrackId(trk.id);
@@ -1006,7 +1082,16 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handlePrevMusicTrack = () => {
-    setStreamingTrack(null);
+    if (streamingTrack) {
+      const presets = ROMANTIC_STREAMING_PRESETS;
+      const curIdx = presets.findIndex(
+        (p) => p.originalUrl === streamingTrack.originalUrl || p.embedUrl === streamingTrack.embedUrl
+      );
+      const prevIdx = curIdx > 0 ? curIdx - 1 : presets.length - 1;
+      handleSelectStreamingPreset(presets[prevIdx]);
+      return;
+    }
+
     romanticMusic.previousTrack();
     const trk = romanticMusic.getActiveTrack();
     setActiveMusicTrackId(trk.id);
@@ -1089,6 +1174,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   // Streaming Handlers (Spotify / Apple Music / YouTube)
   const handleSelectStreamingPreset = (preset: StreamingTrackInfo) => {
     romanticMusic.pauseForStreaming();
+    hasUnlockedAudio.current = true;
+    const now = Date.now();
+    streamingStartedAt.current = now;
     setStreamingTrack(preset);
     setMusicPlaying(true);
     setShowStreamingDock(true);
@@ -1101,11 +1189,12 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       streamingOriginalUrl: preset.originalUrl,
       streamingTitle: preset.title,
       streamingSubtitle: preset.subtitle,
+      startedAt: now,
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
     });
     setSyncToast({
-      message: `Playing "${preset.title}" via ${preset.provider.toUpperCase()} for both! 🟢`,
+      message: `Playing "${preset.title}" via ${preset.provider.toUpperCase()} for both! 🎶`,
       icon: preset.icon,
     });
     setTimeout(() => setSyncToast(null), 3500);
@@ -1123,6 +1212,9 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       return;
     }
     romanticMusic.pauseForStreaming();
+    hasUnlockedAudio.current = true;
+    const now = Date.now();
+    streamingStartedAt.current = now;
     setStreamingTrack(parsed);
     setMusicPlaying(true);
     setShowStreamingDock(true);
@@ -1135,6 +1227,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       streamingOriginalUrl: parsed.originalUrl,
       streamingTitle: parsed.title,
       streamingSubtitle: parsed.subtitle,
+      startedAt: now,
       senderRole: profile.currentUserRole,
       senderName: currentUserName,
     });
@@ -1212,6 +1305,19 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const currentThemeConfig = ROMANTIC_THEMES.find((t) => t.id === activeTheme) || ROMANTIC_THEMES[0];
   const currentFilterConfig = ROMANTIC_FILTERS.find((f) => f.id === activeFilter) || ROMANTIC_FILTERS[0];
+
+  const resolvedEmbedUrl = useMemo(() => {
+    if (!streamingTrack) return '';
+    if (
+      streamingTrack.provider === 'youtube' &&
+      typeof window !== 'undefined' &&
+      !streamingTrack.embedUrl.includes('origin=')
+    ) {
+      return `${streamingTrack.embedUrl}&origin=${encodeURIComponent(window.location.origin)}`;
+    }
+    return streamingTrack.embedUrl;
+  }, [streamingTrack]);
+
   const currentTrackConfig = streamingTrack
     ? {
         id: 'streaming-track',
@@ -2101,6 +2207,45 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                 )}
               </div>
 
+              {/* Spotify Synced Listening Info / Tab Audio Option */}
+              {streamingProviderTab === 'spotify' && (
+                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs text-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                      <span>🟢</span>
+                      <span>Spotify Listen Together</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
+                      DRM Protected
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-slate-300">
+                    Spotify requires both partners to tap Play inside the widget (or be logged in) due to Spotify's privacy policies. For 100% automated listening together with zero delays:
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setShowMusicModal(false);
+                        if (!isScreenSharing) {
+                          await videoCallService.startScreenShare();
+                        }
+                      }}
+                      className="flex-1 min-w-[170px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition cursor-pointer active:scale-95"
+                    >
+                      <span>🎧 Broadcast Spotify Tab Audio</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStreamingProviderTab('youtube')}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/10 transition cursor-pointer"
+                    >
+                      <span>▶️ Synced YouTube Music</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Paste Any Streaming URL */}
               <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
                 <div className="flex items-center justify-between text-white font-bold">
@@ -2726,13 +2871,30 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             </div>
           )}
 
+          {/* Spotify Direct Audio Notice */}
+          {streamingTrack.provider === 'spotify' && (
+            <div className="flex items-center justify-between p-2 mb-2 rounded-xl bg-emerald-950/50 border border-emerald-500/30 text-[11px] text-slate-200">
+              <span className="text-emerald-300 truncate">💡 Tap ▶️ inside Spotify, or broadcast tab audio</span>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!isScreenSharing) await videoCallService.startScreenShare();
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition shadow-sm cursor-pointer shrink-0 ml-2"
+              >
+                Broadcast Tab 🎧
+              </button>
+            </div>
+          )}
+
           {/* Iframe Embed */}
           {showStreamingDock && (
             <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
               <iframe
                 ref={streamingIframeRef}
-                key={streamingTrack.embedUrl}
-                src={streamingTrack.embedUrl}
+                key={resolvedEmbedUrl}
+                src={resolvedEmbedUrl}
+                onLoad={handleIframeLoaded}
                 width="100%"
                 height={streamingTrack.height || 180}
                 frameBorder="0"

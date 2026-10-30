@@ -209,6 +209,7 @@ export interface VideoSignalData {
   streamingOriginalUrl?: string;
   streamingTitle?: string;
   streamingSubtitle?: string;
+  musicStartedAt?: number;
   sentAt?: number;
 }
 
@@ -378,6 +379,7 @@ export type MusicSyncListener = (info: {
   streamingOriginalUrl?: string;
   streamingTitle?: string;
   streamingSubtitle?: string;
+  startedAt?: number;
   senderName?: string;
   senderRole?: UserRole;
 }) => void;
@@ -1112,6 +1114,7 @@ class RomanticVideoCallService {
           streamingOriginalUrl: data.streamingOriginalUrl,
           streamingTitle: data.streamingTitle,
           streamingSubtitle: data.streamingSubtitle,
+          startedAt: data.musicStartedAt,
           senderName: senderName || 'Your Love',
           senderRole,
         })
@@ -1347,6 +1350,7 @@ class RomanticVideoCallService {
     streamingOriginalUrl?: string;
     streamingTitle?: string;
     streamingSubtitle?: string;
+    startedAt?: number;
     senderRole?: UserRole;
     senderName?: string;
   }) {
@@ -1363,6 +1367,7 @@ class RomanticVideoCallService {
         streamingOriginalUrl: data.streamingOriginalUrl,
         streamingTitle: data.streamingTitle,
         streamingSubtitle: data.streamingSubtitle,
+        musicStartedAt: data.startedAt || Date.now(),
       },
       data.senderRole || this.myRole,
       data.senderName

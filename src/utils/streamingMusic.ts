@@ -289,7 +289,47 @@ export const ROMANTIC_STREAMING_PRESETS: StreamingTrackInfo[] = [
     height: 152,
   },
 
-  // YouTube Live & Ad-Free Continuous Streams
+  // YouTube Live & Ad-Free Continuous Streams (100% Synced, Zero Login Required)
+  {
+    provider: 'youtube',
+    originalUrl: 'https://www.youtube.com/watch?v=2Vv-BfVoq4g',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/2Vv-BfVoq4g?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    title: 'Ed Sheeran — Perfect (Acoustic)',
+    subtitle: 'YouTube Music • Timeless romantic ballad for slow dancing',
+    icon: '▶️',
+    type: 'video',
+    height: 200,
+  },
+  {
+    provider: 'youtube',
+    originalUrl: 'https://www.youtube.com/watch?v=GxldQ9GyXfY',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/GxldQ9GyXfY?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    title: 'Until I Found You — Stephen Sanchez',
+    subtitle: 'YouTube Music • Vintage 1950s style soul ballad',
+    icon: '▶️',
+    type: 'video',
+    height: 200,
+  },
+  {
+    provider: 'youtube',
+    originalUrl: 'https://www.youtube.com/watch?v=P4XfB8o4Q1o',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/P4XfB8o4Q1o?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    title: "Can't Help Falling in Love — Kina Grannis",
+    subtitle: 'YouTube Music • Delicate acoustic guitar & velvet vocals',
+    icon: '▶️',
+    type: 'video',
+    height: 200,
+  },
+  {
+    provider: 'youtube',
+    originalUrl: 'https://www.youtube.com/watch?v=rtOvBOTyX00',
+    embedUrl: 'https://www.youtube-nocookie.com/embed/rtOvBOTyX00?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1',
+    title: 'A Thousand Years — Christina Perri',
+    subtitle: 'YouTube Music • Pure romantic cello & piano ballad',
+    icon: '▶️',
+    type: 'video',
+    height: 200,
+  },
   {
     provider: 'youtube',
     originalUrl: 'https://www.youtube.com/watch?v=5qap5aO4i9A',
