@@ -95,16 +95,41 @@ export function extractSpotifyUri(url: string): string | undefined {
  * same millisecond without any login required.
  */
 const SPOTIFY_SYNC_MAP: Record<string, { title: string; subtitle: string; videoId: string }> = {
+  // Ed Sheeran - Perfect
   '0tgVpDi06FyKpA1z0VMD4v': { title: 'Perfect — Ed Sheeran',                        subtitle: 'Synced Stream • Timeless acoustic love ballad',         videoId: '2Vv-BfVoq4g' },
+  // Stephen Sanchez - Until I Found You
   '0P6cw2qYwVzF6x8l0Y3l0h': { title: 'Until I Found You — Stephen Sanchez',          subtitle: 'Synced Stream • Vintage 1950s style soul ballad',       videoId: 'GxldQ9GyXfY' },
   '7qEHsqek3amrGQHHW9WOpd': { title: 'Until I Found You — Stephen Sanchez',          subtitle: 'Synced Stream • Vintage 1950s style soul ballad',       videoId: 'GxldQ9GyXfY' },
+  // John Legend - All of Me
   '3U4isOIWM3VvDubwSI3y7a': { title: 'All of Me — John Legend',                      subtitle: 'Synced Stream • Soulful piano love anthem',             videoId: '450p7goxZqg' },
+  // Lady Gaga & Bruno Mars - Die With A Smile
   '2plbrEY59IikOBNoBvt7x0': { title: 'Die With A Smile — Lady Gaga & Bruno Mars',    subtitle: 'Synced Stream • Romantic vocal masterpiece',             videoId: 'kPa7bsKwL-8' },
   '1mea3bSkSGXuIRvnydlB5b': { title: 'Die With A Smile — Lady Gaga & Bruno Mars',    subtitle: 'Synced Stream • Romantic vocal masterpiece',             videoId: 'kPa7bsKwL-8' },
+  // Kina Grannis - Can't Help Falling in Love
   '1vYxbdtPtqI2uG491Z26Bf': { title: "Can't Help Falling in Love — Kina Grannis",    subtitle: 'Synced Stream • Soft acoustic romance',                 videoId: 'P4XfB8o4Q1o' },
+  // Taylor Swift - Lover
   '1dGr1nxG9ZGpmZbaBp1IYW': { title: 'Lover — Taylor Swift',                         subtitle: 'Synced Stream • Romantic waltz for couples',             videoId: '-BjZmE2gtdo' },
+  // James Arthur - Say You Won't Let Go
   '0vg4WnUWv4K69wSDf29tp5': { title: "Say You Won't Let Go — James Arthur",          subtitle: 'Synced Stream • Warm acoustic guitar & vocals',          videoId: '0yW7w8F2TVA' },
+  // Christina Perri - A Thousand Years
   '6lanRgr6w69um7oqpm8TwA': { title: 'A Thousand Years — Christina Perri',           subtitle: 'Synced Stream • Pure romantic cello & piano ballad',     videoId: 'rtOvBOTyX00' },
+  // JVKE - golden hour
+  '5odlY52u43F5BjByvv7GSw': { title: 'golden hour — JVKE',                          subtitle: 'Synced Stream • Emotional piano romantic masterpiece',   videoId: 'PEM0Vs8jf1w' },
+  // Ruth B. - Dandelions
+  '2eAvDnpXP5W0cVhuKJj1Dw': { title: 'Dandelions — Ruth B.',                         subtitle: 'Synced Stream • Gentle whimsical love song',            videoId: 'W8a4sUabCUo' },
+  // The Weeknd - Die For You
+  '2Ch7LmS7r2Cool42cuQAqw': { title: 'Die For You — The Weeknd',                     subtitle: 'Synced Stream • Smooth R&B romantic devotion',           videoId: 'u9n7Cw-4_PE' },
+  // Bruno Mars - Just the Way You Are
+  '7BqBn9nXd0B0OiNOUpGl3A': { title: 'Just the Way You Are — Bruno Mars',            subtitle: 'Synced Stream • Uplifting classic love anthem',          videoId: 'LjhCEhWiKXk' },
+  // Calum Scott - You Are The Reason
+  '69vToJ9BMbbLlFZo7k7A78': { title: 'You Are The Reason — Calum Scott',             subtitle: 'Synced Stream • Powerful heartfelt emotional ballad',    videoId: 'ShZ978fBl6Y' },
+  // Arijit Singh - Kesariya (Brahmāstra)
+  '7n92Q7XhWkWy0Y9x6k9j1b': { title: 'Kesariya — Arijit Singh',                     subtitle: 'Synced Stream • Soulful Indian acoustic romance',        videoId: 'BddP6PYo2gs' },
+  // Arijit Singh - Tum Hi Ho
+  '1qE0dkhz95427rG87Vp0jU': { title: 'Tum Hi Ho — Arijit Singh',                     subtitle: 'Synced Stream • Iconic piano romantic anthem',           videoId: 'IJq0yyWug1k' },
+  // Shershaah - Raataan Lambiyan
+  '2rGP8e35r6m63pW9vWfXQv': { title: 'Raataan Lambiyan — Tanishk Bagchi',            subtitle: 'Synced Stream • Sweet acoustic romantic melodies',       videoId: 'gvyUuxdRdR4' },
+  // Playlists
   '37i9dQZF1DX50oq6vV7x2S': { title: 'Love Ballads & Romance',                       subtitle: 'Synced Stream • All-time romantic classics & slow dance',videoId: 'DWcJFNfaw9c' },
   '37i9dQZF1DX2pSTOxoPbx9': { title: 'Cozy Acoustic Love',                            subtitle: 'Synced Stream • Warm guitar fingerpicking & soft vocals',videoId: 'rtOvBOTyX00' },
   '37i9dQZF1DX4t95PaoR1zy': { title: 'Midnight Lo-Fi Romance',                        subtitle: 'Synced Stream • Gentle study & chill beats for two',     videoId: '5qap5aO4i9A' },

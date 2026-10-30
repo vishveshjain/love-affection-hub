@@ -530,6 +530,22 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     videoCallService.setMyRole(profile.currentUserRole);
   }, [profile.currentUserRole]);
 
+  // Auto-unlock web audio policy on any user gesture inside the call window
+  useEffect(() => {
+    const unlockOnGesture = () => {
+      hasUnlockedAudio.current = true;
+      romanticMusic.unlockAudio();
+    };
+    window.addEventListener('pointerdown', unlockOnGesture, { passive: true });
+    window.addEventListener('touchstart', unlockOnGesture, { passive: true });
+    window.addEventListener('click', unlockOnGesture, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockOnGesture);
+      window.removeEventListener('touchstart', unlockOnGesture);
+      window.removeEventListener('click', unlockOnGesture);
+    };
+  }, []);
+
   // Subscribe to call state changes, screen sharing, music, and bidirectional theme-sync
   useEffect(() => {
     const unsubState = videoCallService.onStateChange((state) => {
@@ -687,16 +703,20 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
         if (hasUnlockedAudio.current) {
           setShowSyncListenPrompt(false);
           // Send commands at multiple intervals to catch player readiness
-          setTimeout(sendIframeCommands, 400);
-          setTimeout(sendIframeCommands, 1200);
+          setTimeout(sendIframeCommands, 350);
+          setTimeout(sendIframeCommands, 900);
+          setTimeout(sendIframeCommands, 2000);
         } else {
           // If first time receiving streaming music on this device, prompt once to unlock audio
           setShowSyncListenPrompt(true);
         }
 
         const sender = info.senderName || partnerName || 'Your Love';
+        const isPause = info.isPlaying === false;
         setSyncToast({
-          message: `${sender} started streaming "${info.streamingTitle || 'song'}" on ${info.streamingProvider?.toUpperCase()}! 🎶`,
+          message: isPause
+            ? `${sender} paused music ⏸️`
+            : `${sender} playing "${info.streamingTitle || 'song'}" together! 🎶`,
           icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
         });
         setTimeout(() => setSyncToast(null), 3500);
@@ -997,7 +1017,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleIframeLoaded = () => {
-    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow && musicPlaying) {
+    if (streamingIframeRef.current?.contentWindow && musicPlaying) {
       streamingIframeRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
         '*'
@@ -1021,7 +1041,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       const nextPlaying = !musicPlaying;
       setMusicPlaying(nextPlaying);
 
-      if (streamingTrack.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+      if (streamingIframeRef.current?.contentWindow) {
         const cmd = nextPlaying ? 'playVideo' : 'pauseVideo';
         streamingIframeRef.current.contentWindow.postMessage(
           JSON.stringify({ event: 'command', func: cmd, args: '' }),
@@ -1069,7 +1089,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const handleNextMusicTrack = () => {
     if (streamingTrack) {
-      const presets = ROMANTIC_STREAMING_PRESETS;
+      const providerPresets = ROMANTIC_STREAMING_PRESETS.filter((p) => p.provider === streamingTrack.provider);
+      const presets = providerPresets.length > 0 ? providerPresets : ROMANTIC_STREAMING_PRESETS;
       const curIdx = presets.findIndex(
         (p) => p.originalUrl === streamingTrack.originalUrl || p.embedUrl === streamingTrack.embedUrl
       );
@@ -1098,7 +1119,8 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const handlePrevMusicTrack = () => {
     if (streamingTrack) {
-      const presets = ROMANTIC_STREAMING_PRESETS;
+      const providerPresets = ROMANTIC_STREAMING_PRESETS.filter((p) => p.provider === streamingTrack.provider);
+      const presets = providerPresets.length > 0 ? providerPresets : ROMANTIC_STREAMING_PRESETS;
       const curIdx = presets.findIndex(
         (p) => p.originalUrl === streamingTrack.originalUrl || p.embedUrl === streamingTrack.embedUrl
       );
