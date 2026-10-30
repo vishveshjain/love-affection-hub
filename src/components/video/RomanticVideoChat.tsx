@@ -647,13 +647,20 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           subtitle: info.streamingSubtitle || `${info.streamingProvider || 'Online'} stream`,
           icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
           type: 'track',
-          height: info.streamingProvider === 'spotify' ? 152 : 180,
+          height:
+            info.streamingProvider === 'spotify'
+              ? info.streamingEmbedUrl.includes('/playlist/') || info.streamingEmbedUrl.includes('/album/')
+                ? 352
+                : 152
+              : info.streamingProvider === 'apple-music'
+              ? 152
+              : 200,
         });
         setMusicPlaying(info.isPlaying ?? true);
         setShowStreamingDock(true);
 
         const sendIframeCommands = () => {
-          if (streamingIframeRef.current?.contentWindow) {
+          if (info.streamingProvider === 'youtube' && streamingIframeRef.current?.contentWindow) {
             if (info.isPlaying === false) {
               streamingIframeRef.current.contentWindow.postMessage(
                 JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
@@ -975,7 +982,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setShowSyncListenPrompt(false);
     romanticMusic.unlockAudio();
 
-    if (streamingIframeRef.current?.contentWindow) {
+    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
       streamingIframeRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
         '*'
@@ -995,7 +1002,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleIframeLoaded = () => {
-    if (streamingIframeRef.current?.contentWindow && musicPlaying) {
+    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow && musicPlaying) {
       streamingIframeRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
         '*'
@@ -1019,7 +1026,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       const nextPlaying = !musicPlaying;
       setMusicPlaying(nextPlaying);
 
-      if (streamingIframeRef.current?.contentWindow) {
+      if (streamingTrack.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
         const cmd = nextPlaying ? 'playVideo' : 'pauseVideo';
         streamingIframeRef.current.contentWindow.postMessage(
           JSON.stringify({ event: 'command', func: cmd, args: '' }),
@@ -1186,6 +1193,15 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   // Streaming Handlers (Spotify / Apple Music / YouTube)
   const handleSelectStreamingPreset = (preset: StreamingTrackInfo) => {
+    // If a YouTube video was playing, pause it before loading the new preset
+    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+      try {
+        streamingIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+          '*'
+        );
+      } catch {}
+    }
     romanticMusic.pauseForStreaming();
     hasUnlockedAudio.current = true;
     const now = Date.now();
@@ -1226,6 +1242,15 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
       });
       setTimeout(() => setSyncToast(null), 3500);
       return;
+    }
+    // If a YouTube video was playing, pause it before loading the new track
+    if (streamingTrack?.provider === 'youtube' && streamingIframeRef.current?.contentWindow) {
+      try {
+        streamingIframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+          '*'
+        );
+      } catch {}
     }
     romanticMusic.pauseForStreaming();
     hasUnlockedAudio.current = true;
@@ -2261,17 +2286,22 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
               {/* Spotify Real-Time Sync Status */}
               {streamingProviderTab === 'spotify' && (
-                <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs text-slate-200 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base text-emerald-400">🟢</span>
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-white text-xs truncate">Spotify Real-Time Sync Active</div>
-                      <div className="text-[10px] text-emerald-300/80 truncate">Both partners stay synchronized in lockstep</div>
+                <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs text-slate-200 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-base text-emerald-400">🟢</span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-white text-xs truncate">Official Spotify Player Active</div>
+                        <div className="text-[10px] text-emerald-300/80 truncate">Plays official Spotify tracks & playlists</div>
+                      </div>
                     </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-400/30 shrink-0">
+                      Spotify 🟢
+                    </span>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-400/30 shrink-0">
-                    Synced ⚡
-                  </span>
+                  <p className="text-[10px] text-slate-300 leading-tight pt-1">
+                    💡 If your partner is on a phone without a Spotify login, you can also use the <strong className="text-red-400">YouTube</strong> tab for 100% login-free synchronized listening.
+                  </p>
                 </div>
               )}
 
@@ -2903,6 +2933,22 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           {/* Active Streaming Player */}
           {showStreamingDock && (
             <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
+              {streamingTrack.provider === 'spotify' && (
+                <div className="flex items-center justify-between px-3 py-1 bg-emerald-950/80 border-b border-emerald-500/20 text-[10px] text-emerald-300">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <span>🟢</span> Spotify Player
+                  </span>
+                  <a
+                    href={streamingTrack.originalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:text-white transition flex items-center gap-1"
+                  >
+                    <span>Open in Spotify</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+              )}
               <iframe
                 ref={streamingIframeRef}
                 key={resolvedEmbedUrl}
