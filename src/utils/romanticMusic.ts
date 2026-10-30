@@ -628,6 +628,13 @@ class RomanticMusicService {
     this.stopPlayback();
   }
 
+  // Pause ambient audio while user plays an online streaming service (Spotify/Apple Music/YouTube)
+  public pauseForStreaming() {
+    this.stopPlayback();
+    this.isRunning = false;
+    this.notify();
+  }
+
   // Romantic Ringing Melody for Incoming Calls
   public startRinging() {
     this.initContext();

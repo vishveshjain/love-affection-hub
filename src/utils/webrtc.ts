@@ -204,6 +204,11 @@ export interface VideoSignalData {
   musicVolume?: number;
   customSongUrl?: string;
   customSongTitle?: string;
+  streamingProvider?: 'spotify' | 'apple-music' | 'youtube' | 'soundcloud' | 'custom' | 'soundscape';
+  streamingEmbedUrl?: string;
+  streamingOriginalUrl?: string;
+  streamingTitle?: string;
+  streamingSubtitle?: string;
   sentAt?: number;
 }
 
@@ -368,6 +373,11 @@ export type MusicSyncListener = (info: {
   volume?: number;
   customUrl?: string;
   customTitle?: string;
+  streamingProvider?: 'spotify' | 'apple-music' | 'youtube' | 'soundcloud' | 'custom' | 'soundscape';
+  streamingEmbedUrl?: string;
+  streamingOriginalUrl?: string;
+  streamingTitle?: string;
+  streamingSubtitle?: string;
   senderName?: string;
   senderRole?: UserRole;
 }) => void;
@@ -1097,6 +1107,11 @@ class RomanticVideoCallService {
           volume: data.musicVolume,
           customUrl: data.customSongUrl,
           customTitle: data.customSongTitle,
+          streamingProvider: data.streamingProvider,
+          streamingEmbedUrl: data.streamingEmbedUrl,
+          streamingOriginalUrl: data.streamingOriginalUrl,
+          streamingTitle: data.streamingTitle,
+          streamingSubtitle: data.streamingSubtitle,
           senderName: senderName || 'Your Love',
           senderRole,
         })
@@ -1327,6 +1342,11 @@ class RomanticVideoCallService {
     volume?: number;
     customUrl?: string;
     customTitle?: string;
+    streamingProvider?: 'spotify' | 'apple-music' | 'youtube' | 'soundcloud' | 'custom' | 'soundscape';
+    streamingEmbedUrl?: string;
+    streamingOriginalUrl?: string;
+    streamingTitle?: string;
+    streamingSubtitle?: string;
     senderRole?: UserRole;
     senderName?: string;
   }) {
@@ -1338,6 +1358,11 @@ class RomanticVideoCallService {
         musicVolume: data.volume,
         customSongUrl: data.customUrl,
         customSongTitle: data.customTitle,
+        streamingProvider: data.streamingProvider,
+        streamingEmbedUrl: data.streamingEmbedUrl,
+        streamingOriginalUrl: data.streamingOriginalUrl,
+        streamingTitle: data.streamingTitle,
+        streamingSubtitle: data.streamingSubtitle,
       },
       data.senderRole || this.myRole,
       data.senderName

@@ -46,7 +46,23 @@ import {
   Upload,
   Radio,
   Headphones,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Link2,
+  CheckCircle2,
+  Trash2,
 } from 'lucide-react';
+import {
+  parseStreamingUrl,
+  ROMANTIC_STREAMING_PRESETS,
+  StreamingTrackInfo,
+  StreamingProvider,
+  getLinkedAccounts,
+  saveLinkedAccount,
+  removeLinkedAccount,
+  LinkedAccount,
+} from '../../utils/streamingMusic';
 
 const ROMANTIC_EMOJIS = [
   { emoji: '💋', label: 'Sweet Kiss', soundFreq: 800 },
@@ -611,9 +627,17 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const [activeMusicTrackId, setActiveMusicTrackId] = useState(romanticMusic.getActiveTrackId());
   const [musicVolume, setMusicVolume] = useState(romanticMusic.getVolume());
   const [showMusicModal, setShowMusicModal] = useState(false);
-  const [musicActiveTab, setMusicActiveTab] = useState<'tracks' | 'custom'>('tracks');
+  const [musicActiveTab, setMusicActiveTab] = useState<'tracks' | 'streaming' | 'custom'>('tracks');
   const [customSongInput, setCustomSongInput] = useState('');
   const [customSongTitleInput, setCustomSongTitleInput] = useState('');
+  const [streamingTrack, setStreamingTrack] = useState<StreamingTrackInfo | null>(null);
+  const [streamingInputUrl, setStreamingInputUrl] = useState('');
+  const [streamingInputTitle, setStreamingInputTitle] = useState('');
+  const [streamingProviderTab, setStreamingProviderTab] = useState<StreamingProvider>('spotify');
+  const [linkedAccounts, setLinkedAccounts] = useState<Record<string, LinkedAccount>>(() => getLinkedAccounts());
+  const [accountInputId, setAccountInputId] = useState('');
+  const [isLinkingAccount, setIsLinkingAccount] = useState(false);
+  const [showStreamingDock, setShowStreamingDock] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(videoCallService.isScreenSharing);
   const [partnerScreenSharing, setPartnerScreenSharing] = useState(videoCallService.partnerScreenSharing);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(videoCallService.screenStream);
@@ -735,7 +759,35 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
     // Synchronized romantic music listener from partner
     const unsubMusicSync = videoCallService.onMusicSync((info) => {
-      if (info.trackId) {
+      // 1. If partner played or updated an online streaming track (Spotify / Apple Music / YouTube)
+      if (info.streamingEmbedUrl) {
+        romanticMusic.pauseForStreaming();
+        setStreamingTrack({
+          provider: (info.streamingProvider as StreamingProvider) || 'spotify',
+          embedUrl: info.streamingEmbedUrl,
+          originalUrl: info.streamingOriginalUrl || info.streamingEmbedUrl,
+          title: info.streamingTitle || 'Online Stream',
+          subtitle: info.streamingSubtitle || `${info.streamingProvider || 'Online'} stream`,
+          icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
+          type: 'track',
+          height: info.streamingProvider === 'spotify' ? 80 : 152,
+        });
+        setMusicPlaying(info.isPlaying ?? true);
+        setShowStreamingDock(true);
+        const sender = info.senderName || partnerName || 'Your Love';
+        setSyncToast({
+          message: `${sender} started streaming "${info.streamingTitle || 'song'}" on ${info.streamingProvider?.toUpperCase()}! 🎶`,
+          icon: info.streamingProvider === 'spotify' ? '🟢' : info.streamingProvider === 'apple-music' ? '🍎' : '▶️',
+        });
+        setTimeout(() => setSyncToast(null), 3500);
+        soundFx.playPop(680, 0.08);
+        return;
+      }
+
+      // If partner stopped streaming or switched to soundscapes
+      setStreamingTrack(null);
+
+      if (info.trackId && info.trackId !== 'none') {
         setActiveMusicTrackId(info.trackId);
         if (info.trackId === 'custom-song' && info.customUrl) {
           romanticMusic.playCustomAudio(info.customUrl, info.customTitle);
@@ -973,6 +1025,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleSelectTrack = (trackId: string) => {
+    setStreamingTrack(null);
     romanticMusic.playTrack(trackId);
     setActiveMusicTrackId(trackId);
     setMusicPlaying(true);
@@ -995,6 +1048,28 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleToggleMusicPlay = () => {
+    if (streamingTrack) {
+      const nextPlaying = !musicPlaying;
+      setMusicPlaying(nextPlaying);
+      videoCallService.syncMusic({
+        trackId: 'streaming-track',
+        isPlaying: nextPlaying,
+        streamingProvider: streamingTrack.provider,
+        streamingEmbedUrl: streamingTrack.embedUrl,
+        streamingOriginalUrl: streamingTrack.originalUrl,
+        streamingTitle: streamingTrack.title,
+        streamingSubtitle: streamingTrack.subtitle,
+        senderRole: profile.currentUserRole,
+        senderName: currentUserName,
+      });
+      setSyncToast({
+        message: nextPlaying ? 'Resumed streaming for both!' : 'Paused streaming for both',
+        icon: nextPlaying ? streamingTrack.icon : '⏸️',
+      });
+      setTimeout(() => setSyncToast(null), 2500);
+      return;
+    }
+
     romanticMusic.togglePlay();
     const nextPlaying = romanticMusic.getIsPlaying();
     setMusicPlaying(nextPlaying);
@@ -1013,6 +1088,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handleNextMusicTrack = () => {
+    setStreamingTrack(null);
     romanticMusic.nextTrack();
     const trk = romanticMusic.getActiveTrack();
     setActiveMusicTrackId(trk.id);
@@ -1032,6 +1108,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   };
 
   const handlePrevMusicTrack = () => {
+    setStreamingTrack(null);
     romanticMusic.previousTrack();
     const trk = romanticMusic.getActiveTrack();
     setActiveMusicTrackId(trk.id);
@@ -1057,6 +1134,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const handlePlayCustomSong = () => {
     if (!customSongInput.trim()) return;
+    setStreamingTrack(null);
     const title = customSongTitleInput.trim() || 'Our Special Song';
     romanticMusic.playCustomAudio(customSongInput.trim(), title);
     setActiveMusicTrackId('custom-song');
@@ -1080,6 +1158,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
   const handleUploadCustomAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setStreamingTrack(null);
     const fileUrl = URL.createObjectURL(file);
     const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
     setCustomSongInput(fileUrl);
@@ -1103,6 +1182,109 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
     setTimeout(() => setSyncToast(null), 3500);
   };
 
+  // Streaming Handlers (Spotify / Apple Music / YouTube)
+  const handleSelectStreamingPreset = (preset: StreamingTrackInfo) => {
+    romanticMusic.pauseForStreaming();
+    setStreamingTrack(preset);
+    setMusicPlaying(true);
+    setShowStreamingDock(true);
+    videoCallService.syncMusic({
+      trackId: 'streaming-track',
+      isPlaying: true,
+      streamingProvider: preset.provider,
+      streamingEmbedUrl: preset.embedUrl,
+      streamingOriginalUrl: preset.originalUrl,
+      streamingTitle: preset.title,
+      streamingSubtitle: preset.subtitle,
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: `Playing "${preset.title}" via ${preset.provider.toUpperCase()} for both! 🟢`,
+      icon: preset.icon,
+    });
+    setTimeout(() => setSyncToast(null), 3500);
+    soundFx.playPop(700, 0.08);
+  };
+
+  const handlePlayStreamingUrl = () => {
+    if (!streamingInputUrl.trim()) return;
+    const parsed = parseStreamingUrl(streamingInputUrl.trim(), streamingInputTitle.trim());
+    if (!parsed) {
+      setSyncToast({
+        message: 'Could not recognize streaming link. Try a Spotify, Apple Music, or YouTube link!',
+        icon: '⚠️',
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+      return;
+    }
+    romanticMusic.pauseForStreaming();
+    setStreamingTrack(parsed);
+    setMusicPlaying(true);
+    setShowStreamingDock(true);
+    videoCallService.syncMusic({
+      trackId: 'streaming-track',
+      isPlaying: true,
+      streamingProvider: parsed.provider,
+      streamingEmbedUrl: parsed.embedUrl,
+      streamingOriginalUrl: parsed.originalUrl,
+      streamingTitle: parsed.title,
+      streamingSubtitle: parsed.subtitle,
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: `Streaming "${parsed.title}" for both of you!`,
+      icon: parsed.icon,
+    });
+    setTimeout(() => setSyncToast(null), 3500);
+    soundFx.playPop(720, 0.08);
+  };
+
+  const handleStopStreaming = () => {
+    setStreamingTrack(null);
+    setMusicPlaying(false);
+    videoCallService.syncMusic({
+      trackId: 'none',
+      isPlaying: false,
+      senderRole: profile.currentUserRole,
+      senderName: currentUserName,
+    });
+    setSyncToast({
+      message: 'Stopped streaming music',
+      icon: '⏹️',
+    });
+    setTimeout(() => setSyncToast(null), 2500);
+  };
+
+  const handleLinkAccount = (provider: StreamingProvider) => {
+    if (!accountInputId.trim()) return;
+    saveLinkedAccount({
+      provider,
+      accountIdentifier: accountInputId.trim(),
+      displayName: accountInputId.trim(),
+      connectedAt: Date.now(),
+    });
+    setLinkedAccounts(getLinkedAccounts());
+    setAccountInputId('');
+    setIsLinkingAccount(false);
+    setSyncToast({
+      message: `Linked your ${provider === 'spotify' ? 'Spotify' : provider === 'apple-music' ? 'Apple Music' : 'YouTube'} account!`,
+      icon: '✅',
+    });
+    setTimeout(() => setSyncToast(null), 3000);
+  };
+
+  const handleUnlinkAccount = (provider: StreamingProvider) => {
+    removeLinkedAccount(provider);
+    setLinkedAccounts(getLinkedAccounts());
+    setSyncToast({
+      message: `Unlinked ${provider} account`,
+      icon: '🗑️',
+    });
+    setTimeout(() => setSyncToast(null), 2500);
+  };
+
   const handleTouchHeartStart = () => {
     setTouchingHeart(true);
     videoCallService.setTouchHeart(true, profile.currentUserRole);
@@ -1123,18 +1305,39 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
 
   const currentThemeConfig = ROMANTIC_THEMES.find((t) => t.id === activeTheme) || ROMANTIC_THEMES[0];
   const currentFilterConfig = ROMANTIC_FILTERS.find((f) => f.id === activeFilter) || ROMANTIC_FILTERS[0];
-  const currentTrackConfig = ROMANTIC_TRACKS.find((t) => t.id === activeMusicTrackId) || {
-    id: 'custom-song',
-    title: customSongTitleInput || 'Our Special Song',
-    subtitle: 'Custom couple track',
-    genre: 'Couple Choice',
-    icon: '💖',
-    duration: 'Streaming',
-    bpm: 72,
-    description: 'Your shared personal song playing softly in the background.',
-    gradient: 'from-pink-900 via-rose-900 to-purple-950',
-    glowColor: 'rgba(244, 63, 94, 0.45)',
-  };
+  const currentTrackConfig = streamingTrack
+    ? {
+        id: 'streaming-track',
+        title: streamingTrack.title,
+        subtitle: streamingTrack.subtitle,
+        genre: `${streamingTrack.provider.toUpperCase()} Stream`,
+        icon: streamingTrack.icon,
+        duration: 'Online Stream',
+        bpm: undefined,
+        description: `Streaming together via ${streamingTrack.provider}.`,
+        gradient:
+          streamingTrack.provider === 'spotify'
+            ? 'from-emerald-950 via-slate-900 to-black'
+            : streamingTrack.provider === 'apple-music'
+            ? 'from-rose-950 via-slate-900 to-black'
+            : 'from-red-950 via-slate-900 to-black',
+        glowColor:
+          streamingTrack.provider === 'spotify'
+            ? 'rgba(34, 197, 94, 0.45)'
+            : 'rgba(244, 63, 94, 0.45)',
+      }
+    : ROMANTIC_TRACKS.find((t) => t.id === activeMusicTrackId) || {
+        id: 'custom-song',
+        title: customSongTitleInput || 'Our Special Song',
+        subtitle: 'Custom couple track',
+        genre: 'Couple Choice',
+        icon: '💖',
+        duration: 'Streaming',
+        bpm: 72,
+        description: 'Your shared personal song playing softly in the background.',
+        gradient: 'from-pink-900 via-rose-900 to-purple-950',
+        glowColor: 'rgba(244, 63, 94, 0.45)',
+      };
 
   return (
     <div className={`relative w-full rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 bg-gradient-to-br ${currentThemeConfig.gradient} min-h-[580px] md:min-h-[640px] flex flex-col justify-between border-2 ${currentThemeConfig.accentBorder} select-none`}>
@@ -1733,29 +1936,41 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
             </button>
           </div>
 
-          {/* Tabs: Romantic Soundscapes vs Custom Song */}
-          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-black/40 border border-white/10 mb-3">
+          {/* Tabs: Romantic Soundscapes vs Online Streaming vs Custom Song */}
+          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-black/40 border border-white/10 mb-3">
             <button
               type="button"
               onClick={() => setMusicActiveTab('tracks')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
                 musicActiveTab === 'tracks'
                   ? 'bg-rose-500 text-white shadow-md'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <span>🎹 Soundscapes ({ROMANTIC_TRACKS.length})</span>
+              <span>🎹 Ambience</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMusicActiveTab('streaming')}
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                musicActiveTab === 'streaming'
+                  ? 'bg-gradient-to-r from-emerald-600 via-rose-600 to-red-600 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Radio className="w-3 h-3" />
+              <span>Streaming 🟢🍎</span>
             </button>
             <button
               type="button"
               onClick={() => setMusicActiveTab('custom')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
                 musicActiveTab === 'custom'
                   ? 'bg-rose-500 text-white shadow-md'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <span>💖 Our Song</span>
+              <span>💖 Upload</span>
             </button>
           </div>
 
@@ -1763,7 +1978,7 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           {musicActiveTab === 'tracks' && (
             <div className="space-y-2 mb-4">
               {ROMANTIC_TRACKS.map((track) => {
-                const isSelected = activeMusicTrackId === track.id;
+                const isSelected = activeMusicTrackId === track.id && !streamingTrack;
                 const isThisPlaying = isSelected && musicPlaying;
                 return (
                   <button
@@ -1811,6 +2026,231 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {/* TAB 2: Online Streaming (Spotify / Apple Music / YouTube) */}
+          {musicActiveTab === 'streaming' && (
+            <div className="space-y-3 mb-4 text-xs">
+              {/* Provider Sub-tabs */}
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/40 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStreamingProviderTab('spotify');
+                    setIsLinkingAccount(false);
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-extrabold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    streamingProviderTab === 'spotify'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span>🟢</span>
+                  <span>Spotify</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStreamingProviderTab('apple-music');
+                    setIsLinkingAccount(false);
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-extrabold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    streamingProviderTab === 'apple-music'
+                      ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-md'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span>🍎</span>
+                  <span>Apple Music</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStreamingProviderTab('youtube');
+                    setIsLinkingAccount(false);
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-extrabold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    streamingProviderTab === 'youtube'
+                      ? 'bg-red-600 text-white shadow-md'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span>▶️</span>
+                  <span>YouTube</span>
+                </button>
+              </div>
+
+              {/* Account Linking Status Card */}
+              <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <Link2 className="w-3.5 h-3.5 text-pink-300" />
+                    <span>
+                      {streamingProviderTab === 'spotify'
+                        ? 'Spotify Account'
+                        : streamingProviderTab === 'apple-music'
+                        ? 'Apple Music Account'
+                        : 'YouTube Music'}
+                    </span>
+                  </div>
+                  {linkedAccounts[streamingProviderTab] && (
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-300 font-extrabold">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Linked</span>
+                    </span>
+                  )}
+                </div>
+
+                {linkedAccounts[streamingProviderTab] ? (
+                  <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/40 border border-emerald-500/30">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold text-white truncate">
+                        @{linkedAccounts[streamingProviderTab].displayName}
+                      </div>
+                      <div className="text-[9px] text-emerald-300/80">
+                        Ready to play couple favorites
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleUnlinkAccount(streamingProviderTab)}
+                      className="p-1 rounded-lg bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white transition cursor-pointer"
+                      title="Unlink account"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    {!isLinkingAccount ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] text-slate-300">
+                          {streamingProviderTab === 'spotify'
+                            ? 'Link your Spotify handle or ID to play playlists together.'
+                            : streamingProviderTab === 'apple-music'
+                            ? 'Link your Apple ID/profile or sign in directly in the player.'
+                            : 'Play any romantic YouTube video or lo-fi live stream.'}
+                        </p>
+                        {streamingProviderTab !== 'youtube' && (
+                          <button
+                            type="button"
+                            onClick={() => setIsLinkingAccount(true)}
+                            className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold shrink-0 transition cursor-pointer border border-white/10"
+                          >
+                            + Link
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 pt-1">
+                        <label className="text-[10px] text-slate-300 font-semibold block">
+                          {streamingProviderTab === 'spotify'
+                            ? 'Spotify Username, Profile link, or Client ID:'
+                            : 'Apple Music Profile handle or User ID:'}
+                        </label>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={accountInputId}
+                            onChange={(e) => setAccountInputId(e.target.value)}
+                            placeholder={streamingProviderTab === 'spotify' ? 'e.g. spotify_username' : 'e.g. user_handle'}
+                            className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/20 text-white text-xs focus:outline-none focus:border-pink-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleLinkAccount(streamingProviderTab)}
+                            disabled={!accountInputId.trim()}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsLinkingAccount(false)}
+                            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs transition cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Paste Any Streaming URL */}
+              <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-white font-bold">
+                  <span>Paste {streamingProviderTab === 'spotify' ? 'Spotify' : streamingProviderTab === 'apple-music' ? 'Apple Music' : 'YouTube'} Link:</span>
+                  <span className="text-[10px] text-pink-300 font-normal">Track / Playlist / Album</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    value={streamingInputUrl}
+                    onChange={(e) => setStreamingInputUrl(e.target.value)}
+                    placeholder={
+                      streamingProviderTab === 'spotify'
+                        ? 'https://open.spotify.com/track/...'
+                        : streamingProviderTab === 'apple-music'
+                        ? 'https://music.apple.com/us/album/...'
+                        : 'https://youtube.com/watch?v=...'
+                    }
+                    className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/20 text-white text-xs focus:outline-none focus:border-pink-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePlayStreamingUrl}
+                    disabled={!streamingInputUrl.trim()}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1"
+                  >
+                    <span>Play</span>
+                    <Sparkles className="w-3 h-3 text-amber-300" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Curated 1-Click Couple Playlists */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-wider text-rose-300 flex items-center justify-between px-1">
+                  <span>Romantic Curated Presets</span>
+                  <span className="text-[9px] text-slate-400 font-normal">1-Click Listen Together</span>
+                </div>
+                <div className="space-y-1.5">
+                  {ROMANTIC_STREAMING_PRESETS.filter((p) => p.provider === streamingProviderTab).map((preset) => {
+                    const isSelected = streamingTrack?.originalUrl === preset.originalUrl;
+                    return (
+                      <button
+                        key={preset.originalUrl}
+                        type="button"
+                        onClick={() => handleSelectStreamingPreset(preset)}
+                        className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-rose-500/30 border-2 border-rose-400 ring-2 ring-rose-400/40 shadow-lg'
+                            : 'bg-white/5 hover:bg-white/15 border border-white/10'
+                        }`}
+                      >
+                        <span className="text-xl p-1.5 rounded-lg bg-black/40 shrink-0">
+                          {preset.icon}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="text-xs font-extrabold text-white truncate">{preset.title}</div>
+                            {isSelected && (
+                              <span className="text-[10px] text-emerald-300 font-bold flex items-center gap-1 shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                <span>Active</span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[9px] text-slate-400 truncate">{preset.subtitle}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
@@ -2265,6 +2705,98 @@ export const RomanticVideoChat: React.FC<RomanticVideoChatProps> = ({ onClose })
           </div>
         )}
       </div>
+
+      {/* ================= ONLINE STREAMING EMBED PLAYER (SPOTIFY / APPLE MUSIC / YOUTUBE) ================= */}
+      {streamingTrack && (
+        <div
+          className={`relative z-25 mx-3 md:mx-6 mb-2 rounded-2xl bg-black/90 backdrop-blur-xl border shadow-2xl overflow-hidden transition-all duration-300 ${
+            showStreamingDock ? 'p-3' : 'px-3 py-1.5'
+          }`}
+          style={{
+            borderColor:
+              streamingTrack.provider === 'spotify'
+                ? 'rgba(34, 197, 94, 0.6)'
+                : streamingTrack.provider === 'apple-music'
+                ? 'rgba(244, 63, 94, 0.6)'
+                : 'rgba(239, 68, 68, 0.6)',
+            boxShadow:
+              streamingTrack.provider === 'spotify'
+                ? '0 0 25px rgba(34, 197, 94, 0.25)'
+                : streamingTrack.provider === 'apple-music'
+                ? '0 0 25px rgba(244, 63, 94, 0.25)'
+                : '0 0 25px rgba(239, 68, 68, 0.25)',
+          }}
+        >
+          {/* Header Bar */}
+          <div className="flex items-center justify-between gap-2 mb-2 text-white text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base">{streamingTrack.icon}</span>
+              <div className="min-w-0">
+                <div className="font-extrabold truncate flex items-center gap-1.5">
+                  <span className="truncate">{streamingTrack.title}</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-bold border border-emerald-400/30 shrink-0">
+                    Synced for Both ⚡
+                  </span>
+                </div>
+                {showStreamingDock && (
+                  <p className="text-[10px] text-slate-300 truncate">
+                    {streamingTrack.subtitle}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {/* External Link */}
+              <a
+                href={streamingTrack.originalUrl}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open in ${streamingTrack.provider}`}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              {/* Minimize/Maximize Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowStreamingDock((d) => !d)}
+                title={showStreamingDock ? 'Minimize player' : 'Expand player'}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                {showStreamingDock ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* Stop / Close Player */}
+              <button
+                type="button"
+                onClick={handleStopStreaming}
+                title="Stop streaming for both"
+                className="p-1.5 rounded-lg bg-rose-600/70 hover:bg-rose-600 text-white transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Iframe Embed */}
+          {showStreamingDock && (
+            <div className="rounded-xl overflow-hidden bg-black/80 shadow-inner">
+              <iframe
+                src={streamingTrack.embedUrl}
+                width="100%"
+                height={streamingTrack.height || 152}
+                frameBorder="0"
+                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
+                className="w-full rounded-xl transition-all"
+                title={streamingTrack.title}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ================= NOW PLAYING MINI-JUKEBOX CAPSULE ================= */}
       {callStatus !== 'idle' && (
